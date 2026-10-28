@@ -1,0 +1,221 @@
+@page "/server"
+@inherits LiveComponentBase
+@inject ServerStatusMonitor StatusMonitor
+@inject OllamaServerController ServerController
+@inject IOllamaApiClient OllamaClient
+@inject IOptions<OllamaOptions> OllamaOptions
+@inject IOptions<ServerControlOptions> ServerControlOptions
+
+<PageTitle>Server · Llamazing</PageTitle>
+
+@{
+    ServerStatus status = StatusMonitor.Current;
+}
+
+<header class="page-header">
+    <div>
+        <h1>Ollama server</h1>
+        <p class="muted">@OllamaOptions.Value.BaseUrl · checked @Display.Relative(status.CheckedAt)</p>
+    </div>
+    <div class="header-actions">
+        <button class="btn is-primary" disabled="@(runningAction is not null || status.Process.IsRunning || status.IsReachable)" @onclick="() => ExecuteAsync(ServerAction.Start)">Start</button>
+        <button class="btn" disabled="@(runningAction is not null || !status.Process.IsRunning)" @onclick="() => ExecuteAsync(ServerAction.Restart)">Restart</button>
+        <button class="btn is-danger" disabled="@(runningAction is not null || !status.Process.IsRunning)" @onclick="() => ExecuteAsync(ServerAction.Stop)">Stop</button>
+    </div>
+</header>
+
+@if (runningAction is not null)
+{
+    <div class="alert is-info">@runningAction in progress…</div>
+}
+else if (lastResult is not null)
+{
+    <div class="alert @(lastResult.Succeeded ? "is-success" : "is-error")">
+        <strong>@lastResult.Action</strong> · @lastResult.Message
+        <span class="muted small">(@Display.Relative(lastResult.ExecutedAt))</span>
+    </div>
+}
+
+<section class="stat-grid">
+    <div class="card stat">
+        <span class="stat-label">API</span>
+        <span class="stat-value">
+            <span class="status-dot @(status.IsReachable ? "is-up" : status.IsInitial ? "is-unknown" : "is-down")"></span>
+            @(status.IsReachable ? "Reachable" : status.IsInitial ? "Checking…" : "Unreachable")
+        </span>
+        <span class="stat-detail muted">@(status.Version is null ? "no version" : $"version {status.Version}")</span>
+    </div>
+    <div class="card stat">
+        <span class="stat-label">Process</span>
+        <span class="stat-value">@(status.Process.IsRunning ? status.Process.IsOwned ? "Started by Llamazing" : "Running externally" : "Not running")</span>
+        <span class="stat-detail muted">
+            @if (status.Process.ProcessId is { } processId)
+            {
+                <span>PID @processId</span>
+            }
+            @if (status.Process.RunningSince is { } runningSince)
+            {
+                <span> · up @Display.Duration(DateTimeOffset.Now - runningSince)</span>
+            }
+        </span>
+    </div>
+    <div class="card stat">
+        <span class="stat-label">In memory</span>
+        <span class="stat-value">@status.RunningModels.Count @(status.RunningModels.Count == 1 ? "model" : "models")</span>
+        <span class="stat-detail muted">@Display.Bytes(status.RunningModels.Sum(model => model.Size)) total · @Display.Bytes(status.RunningModels.Sum(model => model.SizeVram)) on GPU</span>
+    </div>
+    <div class="card stat">
+        <span class="stat-label">Installed</span>
+        <span class="stat-value">@status.LocalModels.Count @(status.LocalModels.Count == 1 ? "model" : "models")</span>
+        <span class="stat-detail muted">@Display.Bytes(status.LocalModels.Sum(model => model.Size)) on disk</span>
+    </div>
+</section>
+
+@if (status.Process.IsRunning && !status.Process.IsOwned)
+{
+    <p class="muted small hint">
+        This server was started outside Llamazing (desktop app, terminal or service). Stop works when the process belongs to your account;
+        a server started by Llamazing also shows its live log below.
+    </p>
+}
+
+<section class="card">
+    <h2>Loaded models</h2>
+    @if (unloadFailure is not null)
+    {
+        <div class="alert is-error">@unloadFailure</div>
+    }
+    @if (status.RunningModels.Count == 0)
+    {
+        <p class="muted">No model is loaded. Warm one up from <a href="models">Local models</a>.</p>
+    }
+    else
+    {
+        <table class="table">
+            <thead><tr><th>Model</th><th>Memory</th><th>GPU</th><th>Context</th><th>Unloads</th><th></th></tr></thead>
+            <tbody>
+                @foreach (RunningModel runningModel in status.RunningModels)
+                {
+                    <tr>
+                        <td><code>@runningModel.Name</code></td>
+                        <td>@Display.Bytes(runningModel.Size)</td>
+                        <td>@Display.Bytes(runningModel.SizeVram)</td>
+                        <td>@runningModel.ContextLength</td>
+                        <td>@Display.Relative(runningModel.ExpiresAt.ToLocalTime())</td>
+                        <td class="cell-actions">
+                            <button class="btn is-small" disabled="@unloadingModels.Contains(runningModel.Name)" @onclick="() => UnloadAsync(runningModel.Name)">Unload</button>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    }
+</section>
+
+<section class="card">
+    <div class="section-head">
+        <h2>Server log</h2>
+        <span class="spacer"></span>
+        <label class="toggle"><input type="checkbox" @bind="followLog" /> Follow</label>
+        <button class="btn is-small" @onclick="LoadLogAsync">Refresh</button>
+    </div>
+    <pre class="code-block log-view">@(serverLog ?? "Loading…")</pre>
+</section>
+
+<section class="card">
+    <h2>Configuration</h2>
+    <dl class="details-grid">
+        <dt>API address</dt><dd><code>@OllamaOptions.Value.BaseUrl</code></dd>
+        <dt>Executable</dt><dd><code>@ServerControlOptions.Value.ExecutablePath serve</code></dd>
+        <dt>Start on launch</dt><dd>@(ServerControlOptions.Value.StartOnLaunch ? "yes" : "no")</dd>
+        <dt>Stop on exit</dt><dd>@(ServerControlOptions.Value.StopOnExit ? "yes, if started by Llamazing" : "no")</dd>
+        <dt>Environment</dt>
+        <dd>
+            @if (ServerControlOptions.Value.Environment.Count == 0)
+            {
+                <span class="muted">defaults</span>
+            }
+            @foreach ((string variableName, string variableValue) in ServerControlOptions.Value.Environment)
+            {
+                <div><code>@variableName=@variableValue</code></div>
+            }
+        </dd>
+    </dl>
+    <p class="muted small">Edit the <code>Ollama</code> and <code>ServerControl</code> sections of appsettings.json to change these values.</p>
+</section>
+
+@code {
+    /// <summary>Label of the lifecycle action in progress; buttons are disabled while it runs.</summary>
+    private string? runningAction;
+
+    private ServerActionResult? lastResult;
+    private string? serverLog;
+
+    /// <summary>When set, the log is reloaded at every status probe.</summary>
+    private bool followLog;
+
+    /// <summary>Last unload error, shown in the loaded models section.</summary>
+    private string? unloadFailure;
+
+    private readonly HashSet<string> unloadingModels = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Every probe updates the cards; the log follows only on request.
+        Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
+        StatusMonitor.Changed += ReloadLogWhenFollowing;
+        await LoadLogAsync();
+    }
+
+    public override void Dispose()
+    {
+        StatusMonitor.Changed -= ReloadLogWhenFollowing;
+        base.Dispose();
+    }
+
+    /// <summary>Reloads the log after a probe while "Follow" is checked.</summary>
+    private void ReloadLogWhenFollowing()
+    {
+        if (followLog)
+            _ = InvokeAsync(LoadLogAsync);
+    }
+
+    private async Task LoadLogAsync()
+    {
+        serverLog = await ServerController.GetLogsAsync();
+        StateHasChanged();
+    }
+
+    /// <summary>Runs a lifecycle action off the circuit thread, since stopping waits for the process to exit.</summary>
+    private async Task ExecuteAsync(ServerAction action)
+    {
+        runningAction = action.ToString();
+        lastResult = await Task.Run(() => ServerController.Execute(action));
+        runningAction = null;
+
+        // The new state is published right away instead of at the next poll.
+        await StatusMonitor.ProbeNowAsync();
+        await LoadLogAsync();
+    }
+
+    /// <summary>Evicts a model from memory through OllamaSharp.</summary>
+    private async Task UnloadAsync(string modelName)
+    {
+        unloadingModels.Add(modelName);
+        unloadFailure = null;
+        try
+        {
+            await OllamaClient.RequestModelUnloadAsync(modelName);
+        }
+        catch (Exception unloadError)
+        {
+            // The failure is shown above the table of loaded models.
+            unloadFailure = $"Unloading {modelName} failed: {unloadError.Message}";
+        }
+        finally
+        {
+            unloadingModels.Remove(modelName);
+        }
+        await StatusMonitor.ProbeNowAsync();
+    }
+}

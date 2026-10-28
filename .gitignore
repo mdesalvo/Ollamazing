@@ -426,3 +426,9 @@ FodyWeavers.xsd
 
 # Official VS Code C# Dev Kit Extension exclusion
 #*.lscache
+
+# Llamazing catalog cache
+Llamazing.Web/data/
+
+# JetBrains Rider
+.idea/

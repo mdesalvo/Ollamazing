@@ -1,0 +1,36 @@
+@* Two-thumb slider over a discrete scale of steps; the parent owns the selected indexes. *@
+
+<div class="dual-range @(Disabled ? "is-disabled" : "")">
+    <div class="dual-range-track">
+        <div class="dual-range-fill" style="left:@Percent(LowIndex)%; right:@(100 - Percent(HighIndex))%"></div>
+    </div>
+    <input type="range" min="0" max="@MaxIndex" step="1" value="@LowIndex" disabled="@Disabled"
+           aria-label="Minimum" @oninput="OnLowInput" />
+    <input type="range" min="0" max="@MaxIndex" step="1" value="@HighIndex" disabled="@Disabled"
+           aria-label="Maximum" @oninput="OnHighInput" />
+</div>
+
+@code {
+    /// <summary>Index of the last step; the scale runs from 0 to this value.</summary>
+    [Parameter, EditorRequired] public int MaxIndex { get; set; }
+
+    [Parameter] public int LowIndex { get; set; }
+
+    [Parameter] public int HighIndex { get; set; }
+
+    /// <summary>Raised on every thumb movement with the new (low, high) pair, always ordered.</summary>
+    [Parameter] public EventCallback<(int Low, int High)> RangeChanged { get; set; }
+
+    [Parameter] public bool Disabled { get; set; }
+
+    /// <summary>Horizontal position of a step on the track, from 0 to 100.</summary>
+    private double Percent(int index) => MaxIndex == 0 ? 0 : index * 100.0 / MaxIndex;
+
+    /// <summary>Moves the lower bound, never past the upper one.</summary>
+    private Task OnLowInput(ChangeEventArgs change)
+        => RangeChanged.InvokeAsync((Math.Min(int.Parse(change.Value?.ToString() ?? "0"), HighIndex), HighIndex));
+
+    /// <summary>Moves the upper bound, never below the lower one.</summary>
+    private Task OnHighInput(ChangeEventArgs change)
+        => RangeChanged.InvokeAsync((LowIndex, Math.Max(int.Parse(change.Value?.ToString() ?? "0"), LowIndex)));
+}

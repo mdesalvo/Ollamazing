@@ -1,0 +1,83 @@
+@page "/downloads"
+@inherits LiveComponentBase
+@inject PullManager PullManager
+@inject ServerStatusMonitor StatusMonitor
+
+<PageTitle>Downloads · Llamazing</PageTitle>
+
+<header class="page-header">
+    <div>
+        <h1>Downloads</h1>
+        <p class="muted">@PullManager.ActiveCount running · downloads continue when you leave this page</p>
+    </div>
+    <button class="btn is-ghost" disabled="@(PullManager.Jobs.All(job => job.IsActive))" @onclick="PullManager.ClearFinished">Clear finished</button>
+</header>
+
+<form class="card pull-form" @onsubmit="PullTypedReference">
+    <input class="input" placeholder="Model reference, e.g. qwen3:8b or gpt-oss:120b-cloud" @bind="typedReference" @bind:event="oninput" />
+    <button class="btn is-primary" type="submit" disabled="@(!StatusMonitor.Current.IsReachable || string.IsNullOrWhiteSpace(typedReference))">Pull</button>
+</form>
+
+@if (PullManager.Jobs.Count == 0)
+{
+    <div class="empty-state card"><p>No downloads yet. Pick a model from the <a href="">catalog</a>.</p></div>
+}
+
+<div class="job-list">
+    @foreach (PullJob job in PullManager.Jobs)
+    {
+        <article class="card job-card is-@job.State.ToString().ToLowerInvariant()">
+            <div class="job-head">
+                <code class="job-name">@job.ModelReference</code>
+                <span class="chip is-small">@job.State.ToString().ToLowerInvariant()</span>
+                <span class="spacer"></span>
+                <span class="muted small">started @Display.Relative(job.StartedAt)</span>
+                @if (job.IsActive)
+                {
+                    <button class="btn is-small is-ghost" @onclick="() => PullManager.Cancel(job.Id)">Cancel</button>
+                }
+                else if (job.State is PullState.Failed or PullState.Cancelled)
+                {
+                    <button class="btn is-small" disabled="@(!StatusMonitor.Current.IsReachable)" @onclick="() => PullManager.StartPull(job.ModelReference)">Retry</button>
+                }
+            </div>
+            @if (job.IsActive)
+            {
+                <PullProgress Job="job" />
+                @if (job.LastProgress is { Total: > 0 } progress)
+                {
+                    <p class="muted small">@progress.Status · @Display.Bytes(progress.Completed) of @Display.Bytes(progress.Total)</p>
+                }
+            }
+            else if (job.Error is not null)
+            {
+                <p class="job-error">@job.Error</p>
+            }
+            else if (job.FinishedAt is { } finishedAt)
+            {
+                <p class="muted small">Finished @Display.Relative(finishedAt) in @Display.Duration(finishedAt - job.StartedAt)</p>
+            }
+        </article>
+    }
+</div>
+
+@code {
+    private string typedReference = "";
+
+    protected override void OnInitialized()
+    {
+        // Progress comes from the pulls, reachability from the status probe.
+        Watch(handler => PullManager.Changed += handler, handler => PullManager.Changed -= handler);
+        Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
+    }
+
+    /// <summary>Starts a pull for a reference typed by hand, for models outside the official catalog (user namespaces, private registries).</summary>
+    private void PullTypedReference()
+    {
+        // Blank input has nothing to pull.
+        if (string.IsNullOrWhiteSpace(typedReference))
+            return;
+        PullManager.StartPull(typedReference);
+        typedReference = "";
+    }
+}

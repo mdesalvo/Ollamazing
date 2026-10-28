@@ -1,0 +1,82 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject ServerStatusMonitor StatusMonitor
+@inject PullManager PullManager
+
+<div class="shell">
+    <aside class="sidebar">
+        <a class="brand" href="">
+            <span class="brand-mark" aria-hidden="true">🦙</span>
+            <span class="brand-name">Llamazing</span>
+        </a>
+
+        <nav class="nav">
+            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Catalog</NavLink>
+            <NavLink class="nav-link" href="models">
+                Local models
+                @if (StatusMonitor.Current.IsReachable)
+                {
+                    <span class="nav-count">@StatusMonitor.Current.LocalModels.Count</span>
+                }
+            </NavLink>
+            <NavLink class="nav-link" href="downloads">
+                Downloads
+                @if (PullManager.ActiveCount > 0)
+                {
+                    <span class="nav-count is-accent">@PullManager.ActiveCount</span>
+                }
+            </NavLink>
+            <NavLink class="nav-link" href="server">Server</NavLink>
+        </nav>
+
+        <a class="server-pill" href="server" title="Checked @Display.Relative(StatusMonitor.Current.CheckedAt)">
+            <span class="status-dot @StatusClass"></span>
+            <span>@StatusText</span>
+        </a>
+    </aside>
+
+    <main class="content">
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    /// <summary>Colour of the status dot: checking, reachable, process up but API silent, or down.</summary>
+    private string StatusClass => StatusMonitor.Current switch
+    {
+        { IsInitial: true } => "is-unknown",
+        { IsReachable: true } => "is-up",
+        { Process.IsRunning: true } => "is-warning",
+        _ => "is-down"
+    };
+
+    private string StatusText => StatusMonitor.Current switch
+    {
+        { IsInitial: true } => "Checking Ollama…",
+        { IsReachable: true } current => $"Ollama {current.Version}",
+        { Process.IsRunning: true } => "Ollama starting…",
+        _ => "Ollama offline"
+    };
+
+    protected override void OnInitialized()
+    {
+        // The sidebar badges follow both the server status and the download queue.
+        StatusMonitor.Changed += Rerender;
+        PullManager.Changed += Rerender;
+    }
+
+    /// <summary>Marshals a background notification onto the circuit dispatcher.</summary>
+    private void Rerender() => _ = InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        StatusMonitor.Changed -= Rerender;
+        PullManager.Changed -= Rerender;
+    }
+}

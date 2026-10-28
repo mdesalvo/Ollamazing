@@ -1,0 +1,18 @@
+@* Compact progress of a running download, shared by catalog, local models and downloads pages. *@
+
+<div class="pull-progress" title="@Job.LastProgress?.Status">
+    <div class="progress"><div class="progress-bar @(HasByteCounts ? "" : "is-indeterminate")" style="width:@(HasByteCounts ? Job.LastProgress!.Percent : 100)%"></div></div>
+    <span class="pull-progress-label">@Label</span>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public PullJob Job { get; set; } = null!;
+
+    /// <summary>Byte counts exist only while a layer downloads; manifest and verification steps have none.</summary>
+    private bool HasByteCounts => Job.LastProgress is { Total: > 0 };
+
+    /// <summary>Percentage of the current layer, or the status line while no layer is downloading.</summary>
+    private string Label => HasByteCounts
+        ? $"{Job.LastProgress!.Percent:0}%"
+        : Job.LastProgress?.Status ?? "starting";
+}

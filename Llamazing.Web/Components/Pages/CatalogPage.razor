@@ -1,0 +1,423 @@
+@page "/"
+@inherits LiveComponentBase
+@inject CatalogService CatalogService
+@inject PullManager PullManager
+@inject ServerStatusMonitor StatusMonitor
+
+<PageTitle>Catalog · Llamazing</PageTitle>
+
+<header class="page-header">
+    <div>
+        <h1>Model catalog</h1>
+        <p class="muted">@CatalogStatusLine</p>
+    </div>
+    <button class="btn" disabled="@CatalogService.IsRefreshing" @onclick="RefreshCatalog">
+        @(CatalogService.IsRefreshing ? "Refreshing…" : "Refresh catalog")
+    </button>
+</header>
+
+@if (CatalogService.LastError is not null)
+{
+    <div class="alert is-error">Catalog refresh failed: @CatalogService.LastError</div>
+}
+@if (!StatusMonitor.Current.IsReachable && !StatusMonitor.Current.IsInitial)
+{
+    <div class="alert is-warning">Ollama is offline: browsing works, downloads need the server. <a href="server">Open the server panel</a></div>
+}
+
+@{
+    // Facets and results are computed once per render and shared by the panel, the counters and the list.
+    IReadOnlyList<CatalogModel> allModels = CatalogService.Models;
+    IReadOnlyList<Facet> facets = query.BuildFacets(allModels);
+    IReadOnlyList<CatalogModel> matchingModels = SortModels(allModels.Where(model => query.Matches(model, facets))).ToList();
+    int modelsAwaitingSizes = query.CountAwaitingSizes(allModels, facets);
+}
+
+<div class="catalog-layout">
+    <aside class="card facet-panel">
+        <div class="facet-panel-head">
+            <span class="facet-panel-title">Filters</span>
+            @if (query.HasSelections || query.IsSizeRangeActive || query.SearchText.Length > 0)
+            {
+                <button class="link" @onclick="ClearAllFilters">Clear all</button>
+            }
+        </div>
+
+        @foreach (Facet facet in facets)
+        {
+            <fieldset class="facet">
+                <legend class="facet-title">@facet.Title</legend>
+                @foreach (FacetOption option in facet.Options)
+                {
+                    int optionCount = query.CountOption(allModels, facets, facet, option);
+                    bool isSelected = query.IsSelected(facet.Key, option.Key);
+                    <label class="facet-option @(optionCount == 0 && !isSelected ? "is-empty" : "")">
+                        <input type="checkbox" checked="@isSelected" @onchange="() => ToggleOption(facet, option)" />
+                        <span class="facet-option-label">@option.Label</span>
+                        <span class="facet-option-count">@optionCount</span>
+                    </label>
+                }
+            </fieldset>
+        }
+
+        <fieldset class="facet @(query.IsCloudOnly ? "is-disabled" : "")">
+            <legend class="facet-title">Memory size</legend>
+            <div class="size-range-label">@SizeStepLabel(sizeLowIndex) – @SizeStepLabel(sizeHighIndex)</div>
+            <DualRangeSlider MaxIndex="SizeStepsInGigabytes.Length - 1" LowIndex="sizeLowIndex" HighIndex="sizeHighIndex"
+                             RangeChanged="SetSizeRange" Disabled="query.IsCloudOnly" />
+            <div class="facet-actions">
+                <button class="btn is-small is-ghost" disabled="@query.IsCloudOnly" @onclick="FitToMachineMemory"
+                        title="Limit to models with a tag that fits in the memory of this machine">Fits my RAM (@Display.Bytes(MachineMemoryBytes))</button>
+                @if (query.IsSizeRangeActive)
+                {
+                    <button class="btn is-small is-ghost" @onclick="ResetSizeRange">Any size</button>
+                }
+            </div>
+            @if (query.IsCloudOnly)
+            {
+                <p class="facet-hint">Cloud models run on ollama.com and need no local memory.</p>
+            }
+        </fieldset>
+    </aside>
+
+    <section class="catalog-results">
+        <div class="results-toolbar">
+            <input class="input search" type="search" placeholder="Search by name or description…"
+                   value="@query.SearchText" @oninput="SetSearchText" />
+            <select class="input sort" @bind="sortOrder" @bind:after="ResetPaging" aria-label="Sort by">
+                <option value="@SortOrder.Popular">Most popular</option>
+                <option value="@SortOrder.Newest">Recently updated</option>
+                <option value="@SortOrder.Downloads">Most pulled</option>
+                <option value="@SortOrder.Smallest">Smallest size</option>
+                <option value="@SortOrder.Name">Name</option>
+            </select>
+        </div>
+
+        <p class="result-count muted">
+            @matchingModels.Count of @allModels.Count models
+            @if (modelsAwaitingSizes > 0)
+            {
+                <span> · @modelsAwaitingSizes more may match once their sizes are loaded</span>
+            }
+        </p>
+
+        <div class="model-list">
+            @foreach (CatalogModel model in matchingModels.Take(visibleCount))
+            {
+                bool isExpanded = expandedModels.Contains(model.Name);
+                int installedCount = InstalledTagCount(model);
+                <article class="card model-card">
+                    <div class="model-head">
+                        <a class="model-name" href="https://ollama.com/library/@model.Name" target="_blank" rel="noopener">@model.Name</a>
+                        <div class="chips">
+                            @if (model.OffersCloud)
+                            {
+                                <span class="chip is-cloud">cloud</span>
+                            }
+                            @if (model.IsCloudFree)
+                            {
+                                <span class="chip is-free">free</span>
+                            }
+                            @if (model.HasPaidOption && model.CloudUsageLevel > 0)
+                            {
+                                <span class="usage" title="Cloud usage cost">@(new string('$', model.CloudUsageLevel))<span class="usage-off">@(new string('$', 4 - model.CloudUsageLevel))</span></span>
+                            }
+                            @foreach (string capability in model.Capabilities)
+                            {
+                                <span class="chip">@capability</span>
+                            }
+                            @foreach (string parameterSize in model.ParameterSizes)
+                            {
+                                <span class="chip is-size">@parameterSize</span>
+                            }
+                            @if (installedCount > 0)
+                            {
+                                <span class="chip is-installed">installed@(installedCount > 1 ? $" ×{installedCount}" : "")</span>
+                            }
+                        </div>
+                        <span class="spacer"></span>
+                        @if (FindActivePull(model) is { } activeJob)
+                        {
+                            <PullProgress Job="activeJob" />
+                        }
+                        else
+                        {
+                            <button class="btn is-primary" disabled="@(!StatusMonitor.Current.IsReachable)" @onclick="() => PullDefaultAsync(model)"
+                                    title="@(model.TagsLoadedAt is null ? $"Pull {model.Name}" : $"Pull {model.DefaultPullReference}")">Pull</button>
+                        }
+                    </div>
+
+                    <p class="model-description">@model.Description</p>
+
+                    <div class="model-meta muted">
+                        @if (model.Downloads is { } downloads)
+                        {
+                            <span>@Display.Count(downloads) pulls</span>
+                        }
+                        @if (model.UpdatedOn is { } updatedOn)
+                        {
+                            <span>updated @Display.Relative(updatedOn.ToDateTime(TimeOnly.MinValue))</span>
+                        }
+                        @if (model.ContextWindow is not null)
+                        {
+                            <span>@model.ContextWindow context</span>
+                        }
+                        <span>@SizeSummary(model)</span>
+                        <button class="link" @onclick="() => ToggleExpandedAsync(model)">
+                            @(isExpanded ? "Hide tags" : model.TagsLoadedAt is null ? "Show tags" : $"Show {model.Tags.Count} tags")
+                        </button>
+                    </div>
+
+                    @if (isExpanded)
+                    {
+                        @if (model.TagsLoadedAt is null)
+                        {
+                            <p class="muted">Loading tags…</p>
+                        }
+                        else
+                        {
+                            List<CatalogTag> visibleTags = VisibleTags(model).ToList();
+                            <table class="table tag-table">
+                                <thead><tr><th>Tag</th><th>Size</th><th>Context</th><th>Input</th><th></th></tr></thead>
+                                <tbody>
+                                    @foreach (CatalogTag tag in visibleTags)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <code>@tag.TagName</code>
+                                                @if (tag.IsLatest)
+                                                {
+                                                    <span class="chip is-small">latest</span>
+                                                }
+                                                @if (tag.IsCloud)
+                                                {
+                                                    <span class="chip is-small is-cloud">cloud</span>
+                                                }
+                                            </td>
+                                            <td>@Display.Bytes(tag.SizeBytes)</td>
+                                            <td>@tag.ContextWindow</td>
+                                            <td>@tag.Inputs</td>
+                                            <td class="cell-actions">
+                                                @if (PullManager.FindActive(tag.FullName) is { } tagJob)
+                                                {
+                                                    <PullProgress Job="tagJob" />
+                                                }
+                                                else if (InstalledNames.Contains(tag.FullName))
+                                                {
+                                                    <span class="chip is-installed">installed</span>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn is-small" disabled="@(!StatusMonitor.Current.IsReachable)" @onclick="() => PullManager.StartPull(tag.FullName)">Pull</button>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                            @if (model.Tags.Count > visibleTags.Count)
+                            {
+                                <button class="link" @onclick="() => modelsShowingAllTags.Add(model.Name)">Show @(model.Tags.Count - visibleTags.Count) tags outside the current filters</button>
+                            }
+                        }
+                    }
+                </article>
+            }
+        </div>
+
+        @if (matchingModels.Count > visibleCount)
+        {
+            <div class="load-more">
+                <button class="btn" @onclick="() => visibleCount += PageSize">Show more (@(matchingModels.Count - visibleCount) left)</button>
+            </div>
+        }
+    </section>
+</div>
+
+@code {
+    /// <summary>Number of cards rendered per "show more" step, keeping each SignalR render diff small.</summary>
+    private const int PageSize = 40;
+
+    private const double BytesPerGigabyte = 1e9;
+
+    /// <summary>Slider scale in GB, denser at the small end where consumer hardware lives; the last step means "no limit".</summary>
+    private static readonly double[] SizeStepsInGigabytes = [0, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 512, double.PositiveInfinity];
+
+    /// <summary>Physical memory available to this process, the reference for the "fits my RAM" shortcut.</summary>
+    private static readonly long MachineMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+
+    private enum SortOrder { Popular, Newest, Downloads, Smallest, Name }
+
+    private readonly CatalogQuery query = new();
+    private SortOrder sortOrder = SortOrder.Popular;
+    private int sizeLowIndex;
+    private int sizeHighIndex = SizeStepsInGigabytes.Length - 1;
+    private int visibleCount = PageSize;
+    private readonly HashSet<string> expandedModels = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Expanded models whose tag table ignores the filters, after the user asked to see every tag.</summary>
+    private readonly HashSet<string> modelsShowingAllTags = new(StringComparer.OrdinalIgnoreCase);
+
+    protected override void OnInitialized()
+    {
+        // Catalog progress, download progress and the installed list all change what the page shows.
+        Watch(handler => CatalogService.Changed += handler, handler => CatalogService.Changed -= handler);
+        Watch(handler => PullManager.Changed += handler, handler => PullManager.Changed -= handler);
+        Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
+    }
+
+    /// <summary>Full references of the installed models, used to flag tags already on the server.</summary>
+    private HashSet<string> InstalledNames => StatusMonitor.Current.LocalModels.Select(model => model.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    private string CatalogStatusLine
+    {
+        get
+        {
+            // Before the first refresh there is nothing to describe yet.
+            if (CatalogService.RefreshedAt is not { } refreshedAt)
+                return CatalogService.IsRefreshing ? "Reading the catalog from ollama.com…" : "Catalog not loaded yet";
+
+            string line = $"{CatalogService.Models.Count} models from ollama.com, refreshed {Display.Relative(refreshedAt)}";
+            int modelsWithTags = CatalogService.ModelsWithTags;
+
+            // Sizes arrive progressively; the counter tells why the size facet may still be incomplete.
+            return modelsWithTags < CatalogService.Models.Count
+                ? $"{line} · loading sizes {modelsWithTags}/{CatalogService.Models.Count}"
+                : line;
+        }
+    }
+
+    /// <summary>Orders the matching models; ties keep the popularity order of ollama.com.</summary>
+    private IEnumerable<CatalogModel> SortModels(IEnumerable<CatalogModel> models) => sortOrder switch
+    {
+        // Popularity is the native order of the catalog.
+        SortOrder.Popular => models.OrderBy(model => model.PopularityRank),
+        // Unknown update dates sink to the bottom.
+        SortOrder.Newest => models.OrderByDescending(model => model.UpdatedOn ?? DateOnly.MinValue),
+        // Cloud-only models have no counter and sink to the bottom.
+        SortOrder.Downloads => models.OrderByDescending(model => model.Downloads ?? -1),
+        // Models are ranked by their smallest local tag; unknown sizes sink to the bottom.
+        SortOrder.Smallest => models.OrderBy(model => model.LocalTags.Select(tag => tag.SizeBytes ?? long.MaxValue).DefaultIfEmpty(long.MaxValue).Min()),
+        // Alphabetical order ignores case.
+        _ => models.OrderBy(model => model.Name, StringComparer.OrdinalIgnoreCase)
+    };
+
+    /// <summary>Tags shown in the expanded table, narrowed by class and size range unless the user asked for all of them.</summary>
+    private IEnumerable<CatalogTag> VisibleTags(CatalogModel model)
+    {
+        // The explicit request to see every tag wins over any filter.
+        if (modelsShowingAllTags.Contains(model.Name))
+            return model.Tags;
+
+        // Cloud tags are shown when the cloud class is selected or no class is; local tags likewise.
+        bool showsLocal = query.IsSelected(CatalogQuery.ClassFacetKey, CatalogQuery.LocalOptionKey) || !query.IsSelected(CatalogQuery.ClassFacetKey, CatalogQuery.CloudOptionKey);
+        bool showsCloud = query.IsSelected(CatalogQuery.ClassFacetKey, CatalogQuery.CloudOptionKey) || !query.IsSelected(CatalogQuery.ClassFacetKey, CatalogQuery.LocalOptionKey);
+
+        // Local tags must also fall inside the size range, when one is set.
+        return model.Tags.Where(tag => tag.IsCloud
+            ? showsCloud
+            : showsLocal && (!query.IsSizeRangeActive || query.IsInSizeRange(tag)));
+    }
+
+    /// <summary>Range of download sizes of a model, the quickest hint of the hardware it needs.</summary>
+    private static string SizeSummary(CatalogModel model)
+    {
+        // Sizes are known only after the tags page has been read.
+        if (model.TagsLoadedAt is null)
+            return model.OffersLocal ? "size loading…" : "cloud only";
+
+        List<long> sizes = model.LocalTags.Select(tag => tag.SizeBytes!.Value).ToList();
+
+        // Cloud-only models have no downloadable weights.
+        if (sizes.Count == 0)
+            return "cloud only";
+
+        long smallest = sizes.Min();
+        long largest = sizes.Max();
+        return smallest == largest ? Display.Bytes(smallest) : $"{Display.Bytes(smallest)} – {Display.Bytes(largest)}";
+    }
+
+    /// <summary>Number of tags of a model already installed on the server.</summary>
+    private int InstalledTagCount(CatalogModel model)
+        => StatusMonitor.Current.LocalModels.Count(installed => installed.Name.StartsWith(model.Name + ":", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Running download started from the card's quick button, if any.</summary>
+    private PullJob? FindActivePull(CatalogModel model)
+        => PullManager.FindActive(model.DefaultPullReference) ?? PullManager.FindActive(model.Name);
+
+    /// <summary>Label of a slider step: sub-gigabyte steps in MB, the last one as unlimited.</summary>
+    private static string SizeStepLabel(int index) => SizeStepsInGigabytes[index] switch
+    {
+        double.PositiveInfinity => "∞",
+        0 => "0",
+        < 1 and var gigabytes => $"{gigabytes * 1000:0} MB",
+        var gigabytes => $"{gigabytes:0} GB"
+    };
+
+    private void ResetPaging() => visibleCount = PageSize;
+
+    private void ToggleOption(Facet facet, FacetOption option)
+    {
+        query.Toggle(facet.Key, option.Key);
+        ResetPaging();
+    }
+
+    private void SetSearchText(ChangeEventArgs change)
+    {
+        query.SearchText = change.Value?.ToString()?.Trim() ?? "";
+        ResetPaging();
+    }
+
+    /// <summary>Applies a slider movement to the query; the last step of the scale removes the upper bound.</summary>
+    private void SetSizeRange((int Low, int High) range)
+    {
+        (sizeLowIndex, sizeHighIndex) = range;
+        query.MinSizeBytes = (long)(SizeStepsInGigabytes[sizeLowIndex] * BytesPerGigabyte);
+        query.MaxSizeBytes = double.IsPositiveInfinity(SizeStepsInGigabytes[sizeHighIndex])
+            ? long.MaxValue
+            : (long)(SizeStepsInGigabytes[sizeHighIndex] * BytesPerGigabyte);
+        ResetPaging();
+    }
+
+    private void ResetSizeRange() => SetSizeRange((0, SizeStepsInGigabytes.Length - 1));
+
+    /// <summary>Caps the size range at the largest step that fits in the machine memory.</summary>
+    private void FitToMachineMemory()
+    {
+        // The last finite step not exceeding the physical memory becomes the upper bound.
+        double memoryInGigabytes = MachineMemoryBytes / BytesPerGigabyte;
+        int fittingIndex = Array.FindLastIndex(SizeStepsInGigabytes, step => step <= memoryInGigabytes);
+        SetSizeRange((0, Math.Max(fittingIndex, 1)));
+    }
+
+    private void ClearAllFilters()
+    {
+        query.ClearSelections();
+        query.SearchText = "";
+        ResetSizeRange();
+    }
+
+    /// <summary>Opens or closes the tag table, loading the tags page on demand when the background load has not reached it.</summary>
+    private async Task ToggleExpandedAsync(CatalogModel model)
+    {
+        // Closing needs no data.
+        if (!expandedModels.Add(model.Name))
+        {
+            expandedModels.Remove(model.Name);
+            return;
+        }
+        await CatalogService.EnsureTagsAsync(model.Name);
+    }
+
+    /// <summary>Pulls the default tag of a model, reading its tags first so cloud-only models resolve to their cloud tag.</summary>
+    private async Task PullDefaultAsync(CatalogModel model)
+    {
+        // The default reference depends on the tags, which may not be loaded yet for this model.
+        await CatalogService.EnsureTagsAsync(model.Name);
+        CatalogModel currentModel = CatalogService.Models.FirstOrDefault(candidate => candidate.Name == model.Name) ?? model;
+        PullManager.StartPull(currentModel.DefaultPullReference);
+    }
+
+    /// <summary>Starts a catalog refresh detached from this circuit; progress reaches every open page through change events.</summary>
+    private void RefreshCatalog() => _ = Task.Run(() => CatalogService.RefreshAsync());
+}
