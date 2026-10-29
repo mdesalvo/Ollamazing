@@ -131,8 +131,9 @@ public sealed class OllamaServerController : IDisposable
     {
         lock (processLock)
         {
-            if (controlOptions.StopOnExit && ownedProcess is { HasExited: false })
-                ownedProcess.Kill(entireProcessTree: true);
+            // A failure is only logged: shutdown must complete even when a runner cannot be stopped.
+            if (controlOptions.StopOnExit && ownedProcess is { HasExited: false } && KillProcessTree(ownedProcess) is { } killFailure)
+                logger.LogWarning("Stopping the owned server on exit failed: {Failure}", killFailure);
             ownedProcess?.Dispose();
         }
     }
@@ -167,16 +168,11 @@ public sealed class OllamaServerController : IDisposable
         {
             using (serverProcess)
             {
-                try
+                // Access denied means the server runs under another account, which only its owner can stop.
+                if (KillProcessTree(serverProcess) is { } killFailure)
                 {
-                    // Model runners are children of the server and hold the GPU memory, so they go down with it.
-                    serverProcess.Kill(entireProcessTree: true);
-                    serverProcess.WaitForExit(ExitTimeout);
-                }
-                catch (Exception killError) when (killError is Win32Exception or InvalidOperationException)
-                {
-                    // Access denied means the server runs under another account, which only its owner can stop.
-                    failures.Add($"PID {serverProcess.Id}: {killError.Message}");
+                    logger.LogWarning("Stopping Ollama process {ProcessId} failed: {Failure}", serverProcess.Id, killFailure);
+                    failures.Add($"PID {serverProcess.Id}: {killFailure}");
                 }
             }
         }
@@ -184,6 +180,28 @@ public sealed class OllamaServerController : IDisposable
         return failures.Count == 0
             ? null
             : $"Could not stop every Ollama process ({string.Join("; ", failures)}). The server runs under another account: stop it there, then let Ollamazing start its own.";
+    }
+
+    /// <summary>Kills a server with its model runners and waits for it to exit; returns the reason when the OS refuses.</summary>
+    private static string? KillProcessTree(Process process)
+    {
+        try
+        {
+            // Model runners are children of the server and hold the GPU memory, so they go down with it.
+            process.Kill(entireProcessTree: true);
+            process.WaitForExit(ExitTimeout);
+            return null;
+        }
+        catch (AggregateException treeError)
+        {
+            // Killing a tree reports every process it could not end, typically the same denial repeated.
+            return string.Join("; ", treeError.InnerExceptions.Select(processError => processError.Message).Distinct());
+        }
+        catch (Exception killError) when (killError is Win32Exception or InvalidOperationException)
+        {
+            // A single denial, or a process that vanished in the meantime.
+            return killError.Message;
+        }
     }
 
     /// <summary>Launches <c>ollama serve</c> bound to the configured address, buffering its output for the log viewer.</summary>
