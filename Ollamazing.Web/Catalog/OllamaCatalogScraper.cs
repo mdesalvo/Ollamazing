@@ -59,6 +59,17 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
         return ParseTagsPage(html, modelName);
     }
 
+    /// <summary>Reads the "Model pricing" table, the only place publishing per-token cloud rates.</summary>
+    public async Task<CatalogPricing> ReadPricingAsync(CancellationToken cancellationToken)
+    {
+        // The pricing page is a full HTML document, like the tags pages.
+        string html = await httpClient.GetStringAsync($"{options.Value.BaseUrl}/pricing", cancellationToken);
+
+        CatalogPricing pricing = ParsePricingPage(html);
+        logger.LogInformation("Cloud pricing read: {ModelCount} priced models", pricing.PricesByModel.Count);
+        return pricing;
+    }
+
     /// <summary>Turns one search results fragment into catalog models, ranking them after <paramref name="rankOffset"/>.</summary>
     private IReadOnlyList<CatalogModel> ParseSearchPage(string html, int rankOffset)
     {
@@ -148,6 +159,59 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
         return tagsByName.Values.ToList();
     }
 
+    /// <summary>Extracts the rows of the "Model pricing" table, grouping them by the library model they link to.</summary>
+    private CatalogPricing ParsePricingPage(string html)
+    {
+        IDocument document = htmlParser.ParseDocument(html);
+        Dictionary<string, List<CatalogPrice>> pricesByModel = new(StringComparer.OrdinalIgnoreCase);
+
+        // A redesign that drops the section leaves every model unpriced instead of failing the refresh.
+        IElement? pricingSection = document.QuerySelector("section#model-pricing");
+        if (pricingSection is null)
+            return new CatalogPricing(null, new Dictionary<string, IReadOnlyList<CatalogPrice>>());
+
+        // The paragraph above the table explains the unit and when the off-peak rates apply.
+        string? note = pricingSection.QuerySelector("p")?.TextContent;
+        note = note is null ? null : string.Join(' ', note.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+
+        // Each row reads "model link • input • cached input • output".
+        foreach (IElement row in pricingSection.QuerySelectorAll("tbody tr"))
+        {
+            // Rows without a library link or with fewer columns are not rates.
+            IElement? modelLink = row.QuerySelector("a[href^='/library/']");
+            IHtmlCollection<IElement> cells = row.QuerySelectorAll("td");
+            if (modelLink is null || cells.Length < 4)
+                continue;
+
+            // The label adds the restricted tag ("gpt-oss:120b") and the "(Off-Peak)" marker to the model name.
+            Match labelMatch = PricingLabelPattern().Match(modelLink.TextContent.Trim());
+            string modelName = modelLink.GetAttribute("href")!["/library/".Length..];
+
+            // Rows of the same model are kept in table order: peak before off-peak, larger variant first.
+            if (!pricesByModel.TryGetValue(modelName, out List<CatalogPrice>? modelPrices))
+                pricesByModel[modelName] = modelPrices = [];
+            modelPrices.Add(new CatalogPrice
+            {
+                Variant = labelMatch.Groups[1].Success ? labelMatch.Groups[1].Value : null,
+                IsOffPeak = labelMatch.Groups[2].Success,
+                Input = ParsePrice(cells[1].TextContent),
+                CachedInput = ParsePrice(cells[2].TextContent),
+                Output = ParsePrice(cells[3].TextContent)
+            });
+        }
+
+        return new CatalogPricing(note, pricesByModel.ToDictionary(
+            entry => entry.Key,
+            entry => (IReadOnlyList<CatalogPrice>)entry.Value,
+            StringComparer.OrdinalIgnoreCase));
+    }
+
+    /// <summary>Reads a rate such as "$0.006"; the dash printed for rates that do not apply yields null.</summary>
+    private static decimal? ParsePrice(string cellText)
+        => decimal.TryParse(cellText.Trim().TrimStart('$'), NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out decimal price)
+            ? price
+            : null;
+
     /// <summary>Converts a size label such as "5.2GB", "523MB" or "18GB - 20GB" to bytes, using the decimal units ollama.com prints.</summary>
     private static long? ParseSize(string label)
     {
@@ -204,6 +268,11 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
     /// <remarks>Groups: 1 = expert count (optional), 2 = amount, 3 = unit (m, b or t).</remarks>
     [GeneratedRegex(@"^(?:(\d+)x)?e?(\d+(?:\.\d+)?)([mbt])$", RegexOptions.IgnoreCase)]
     internal static partial Regex ParameterSizePattern();
+
+    /// <summary>Model label of a pricing row: "glm-5.3", "gpt-oss:120b", "deepseek-v4-pro (Off-Peak)".</summary>
+    /// <remarks>Groups: 1 = restricted tag (optional), 2 = off-peak marker (optional).</remarks>
+    [GeneratedRegex(@"^[^:\s(]+(?::(\S+))?\s*(\(off-peak\))?$", RegexOptions.IgnoreCase)]
+    private static partial Regex PricingLabelPattern();
 
     [GeneratedRegex(@"^(\S+)\s+context window$", RegexOptions.IgnoreCase)]
     private static partial Regex ContextWindowPattern();

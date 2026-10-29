@@ -34,6 +34,9 @@ public sealed record CatalogModel
     /// <summary>Position in the catalog popularity ranking, which is the order of the search pages.</summary>
     public int PopularityRank { get; init; }
 
+    /// <summary>Pay-as-you-go cloud rates read from the pricing page; empty when ollama.com publishes none for the model.</summary>
+    public IReadOnlyList<CatalogPrice> Prices { get; init; } = [];
+
     /// <summary>Tags read from the model tags page; empty until <see cref="TagsLoadedAt"/> is set.</summary>
     public IReadOnlyList<CatalogTag> Tags { get; init; } = [];
 
@@ -88,10 +91,39 @@ public sealed record CatalogTag
     public string TagName => FullName[(FullName.IndexOf(':') + 1)..];
 }
 
+/// <summary>One row of the "Model pricing" table of ollama.com: cloud rates in US dollars per million tokens.</summary>
+public sealed record CatalogPrice
+{
+    /// <summary>Tag the rate is restricted to (e.g. "120b" for "gpt-oss:120b"); null when it covers every cloud tag of the model.</summary>
+    public string? Variant { get; init; }
+
+    /// <summary>True for the discounted rate applied outside the peak hours stated in <see cref="CatalogPricing.Note"/>.</summary>
+    public bool IsOffPeak { get; init; }
+
+    /// <summary>Rate of prompt tokens; null when the table prints a dash.</summary>
+    public decimal? Input { get; init; }
+
+    /// <summary>Rate of prompt tokens served from the cache; null when the model offers no cached rate.</summary>
+    public decimal? CachedInput { get; init; }
+
+    /// <summary>Rate of generated tokens; null when the model produces no billed output, as embedding models do.</summary>
+    public decimal? Output { get; init; }
+}
+
+/// <summary>Content of the "Model pricing" section of ollama.com, indexed by library name.</summary>
+/// <param name="Note">Explanatory paragraph above the table, which states the unit and the off-peak window.</param>
+public sealed record CatalogPricing(string? Note, IReadOnlyDictionary<string, IReadOnlyList<CatalogPrice>> PricesByModel)
+{
+    /// <summary>Rates published for a model, or none when the model is not in the table.</summary>
+    public IReadOnlyList<CatalogPrice> PricesOf(string modelName)
+        => PricesByModel.TryGetValue(modelName, out IReadOnlyList<CatalogPrice>? prices) ? prices : [];
+}
+
 /// <summary>Snapshot of the catalog persisted on disk between restarts.</summary>
 /// <param name="SchemaVersion">Version of the parsed shape; a cache written by an older parser is discarded.</param>
-public sealed record CatalogSnapshot(DateTimeOffset RefreshedAt, IReadOnlyList<CatalogModel> Models, int SchemaVersion)
+/// <param name="PricingNote">Explanatory paragraph of the pricing table, kept with the rates it describes.</param>
+public sealed record CatalogSnapshot(DateTimeOffset RefreshedAt, IReadOnlyList<CatalogModel> Models, int SchemaVersion, string? PricingNote = null)
 {
     /// <summary>Bumped whenever the scraper starts extracting different data from the same pages.</summary>
-    public const int CurrentSchemaVersion = 2;
+    public const int CurrentSchemaVersion = 3;
 }

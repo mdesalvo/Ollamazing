@@ -41,6 +41,9 @@ public sealed class CatalogService(
 
     public bool IsRefreshing { get; private set; }
 
+    /// <summary>Explanatory paragraph of the ollama.com pricing table: unit of the rates and off-peak window.</summary>
+    public string? PricingNote { get; private set; }
+
     /// <summary>Message of the last failed refresh, cleared by the next successful one.</summary>
     public string? LastError { get; private set; }
 
@@ -78,15 +81,12 @@ public sealed class CatalogService(
             // The refreshing flag drives the spinner of every open catalog page.
             SetRefreshing(true);
             IReadOnlyList<CatalogModel> freshModels = await scraper.ReadModelListAsync(cancellationToken);
+            CatalogPricing? pricing = await ReadPricingAsync(cancellationToken);
 
-            // Tags are carried over when the model has not been updated since they were read, saving one request per model.
+            // Each fresh model inherits what the previous snapshot already knew and the new list does not carry.
             Dictionary<string, CatalogModel> previousModels = models.ToDictionary(model => model.Name, StringComparer.OrdinalIgnoreCase);
             List<CatalogModel> mergedModels = freshModels
-                .Select(freshModel => previousModels.TryGetValue(freshModel.Name, out CatalogModel? previousModel)
-                                      && previousModel.TagsLoadedAt is not null
-                                      && previousModel.UpdatedOn == freshModel.UpdatedOn
-                    ? freshModel with { Tags = previousModel.Tags, TagsLoadedAt = previousModel.TagsLoadedAt }
-                    : freshModel)
+                .Select(freshModel => MergeModel(freshModel, previousModels.GetValueOrDefault(freshModel.Name), pricing))
                 .ToList();
 
             // The new list replaces the old one as a whole and is persisted before tag loading starts.
@@ -95,6 +95,7 @@ public sealed class CatalogService(
                 models = mergedModels;
                 RefreshedAt = DateTimeOffset.UtcNow;
                 LastError = null;
+                PricingNote = pricing?.Note ?? PricingNote;
             }
             await SaveCacheAsync(cancellationToken);
         }
@@ -112,6 +113,34 @@ public sealed class CatalogService(
 
         // Sizes are loaded after the list is published, so the page fills in progressively.
         await LoadMissingTagsAsync(cancellationToken);
+    }
+
+    /// <summary>Reads the cloud rates, tolerating a failure of the pricing page alone so the model list still refreshes.</summary>
+    private async Task<CatalogPricing?> ReadPricingAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await scraper.ReadPricingAsync(cancellationToken);
+        }
+        catch (Exception pricingError) when (pricingError is not OperationCanceledException)
+        {
+            // Without fresh rates the previous ones stay on screen until the next refresh.
+            logger.LogWarning(pricingError, "Reading cloud pricing failed");
+            return null;
+        }
+    }
+
+    /// <summary>Completes a freshly listed model with its rates and with the tags read before, when still valid.</summary>
+    /// <param name="pricing">Fresh rates; null when the pricing page could not be read and the previous rates are kept.</param>
+    private static CatalogModel MergeModel(CatalogModel freshModel, CatalogModel? previousModel, CatalogPricing? pricing)
+    {
+        // Rates come from the pricing page, falling back to the last ones known for the model.
+        CatalogModel pricedModel = freshModel with { Prices = pricing?.PricesOf(freshModel.Name) ?? previousModel?.Prices ?? [] };
+
+        // Tags are carried over when the model has not been updated since they were read, saving one request per model.
+        return previousModel is { TagsLoadedAt: not null } && previousModel.UpdatedOn == freshModel.UpdatedOn
+            ? pricedModel with { Tags = previousModel.Tags, TagsLoadedAt = previousModel.TagsLoadedAt }
+            : pricedModel;
     }
 
     /// <summary>Makes sure the tags of one model are loaded, fetching them right away when the user opens its details.</summary>
@@ -206,6 +235,7 @@ public sealed class CatalogService(
             {
                 models = snapshot.Models;
                 RefreshedAt = snapshot.RefreshedAt;
+                PricingNote = snapshot.PricingNote;
             }
             Changed?.Invoke();
         }
@@ -233,7 +263,7 @@ public sealed class CatalogService(
             // Writing to a temporary file first keeps the previous cache intact if the process dies mid-write.
             string temporaryPath = CacheFilePath + ".tmp";
             await using (FileStream cacheStream = File.Create(temporaryPath))
-                await JsonSerializer.SerializeAsync(cacheStream, new CatalogSnapshot(refreshedAt, models, CatalogSnapshot.CurrentSchemaVersion), CacheSerializerOptions, cancellationToken);
+                await JsonSerializer.SerializeAsync(cacheStream, new CatalogSnapshot(refreshedAt, models, CatalogSnapshot.CurrentSchemaVersion, PricingNote), CacheSerializerOptions, cancellationToken);
             File.Move(temporaryPath, CacheFilePath, overwrite: true);
         }
         catch (IOException cacheError)

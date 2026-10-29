@@ -57,8 +57,9 @@ A server running under another account, such as a system service, cannot be stop
 
 ollama.com offers no public catalog API, so Ollamazing reads the public HTML pages:
 
-- `/search` provides the model list, capabilities and cloud pricing.
+- `/search` provides the model list, capabilities and the cloud usage level.
 - `/library/<model>/tags` provides per-tag sizes.
+- `/pricing` provides the pay-as-you-go cloud rates per million tokens (input, cached input, output, off-peak), shown on the cards of the models it lists.
 
 Requests are throttled and the result is cached in `Ollamazing.Web/data/catalog-cache.json`.
 

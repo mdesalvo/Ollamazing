@@ -273,6 +273,11 @@ code { font-family: var(--font-mono); font-size: .88em; }
 .model-description { margin: .4rem 0 .5rem; color: var(--text); }
 .model-meta { display: flex; flex-wrap: wrap; gap: .25rem 1rem; font-size: .85rem; align-items: center; }
 .tag-table { margin-top: .75rem; }
+.model-pricing { margin: 0 0 .6rem; }
+.model-pricing-title { font-weight: 600; font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--text-muted); cursor: help; }
+.pricing-table { width: auto; font-size: .85rem; font-variant-numeric: tabular-nums; }
+.pricing-table th, .pricing-table td { padding: .3rem 1rem .3rem 0; }
+.pricing-table th:not(:first-child), .pricing-table td:not(:first-child) { text-align: right; }
 .load-more { display: flex; justify-content: center; margin: 1rem 0; }
 
 /* Two-thumb slider: two transparent range inputs stacked on one painted track. */

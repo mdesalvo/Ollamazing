@@ -49,6 +49,7 @@ dotnet run --project Ollamazing.Web          # http://localhost:5222
 - **Catalogo ollama.com, senza API pubblica:**
   - `/search?page=N` richiede l'header `HX-Request: true`, altrimenti restituisce sempre la prima pagina;
   - le dimensioni dei tag sono solo in `/library/<nome>/tags`;
+  - le tariffe cloud per MTok sono solo in `/pricing`, sezione `#model-pricing`: righe collegate a `/library/<nome>`, con variante opzionale (`gpt-oss:120b`) e suffisso `(Off-Peak)`;
   - se il markup cambia, si corregge solo `Catalog/OllamaCatalogScraper.cs`;
   - le richieste sono limitate da `Catalog:MaxConcurrentRequests` e la cache sta in `Ollamazing.Web/data/` (non committare).
 - **Stato condiviso:** `CatalogService`, `PullManager` e `ServerStatusMonitor` sono singleton che notificano con eventi.

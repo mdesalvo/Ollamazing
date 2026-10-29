@@ -149,6 +149,27 @@
 
                     <p class="model-description">@model.Description</p>
 
+                    @if (model.Prices.Count > 0)
+                    {
+                        <div class="model-pricing">
+                            <span class="model-pricing-title" title="@CatalogService.PricingNote">Cloud pricing · per 1M tokens</span>
+                            <table class="table pricing-table">
+                                <thead><tr><th>Rate</th><th>Input</th><th>Cached input</th><th>Output</th></tr></thead>
+                                <tbody>
+                                    @foreach (CatalogPrice price in model.Prices)
+                                    {
+                                        <tr>
+                                            <td title="@(price.IsOffPeak ? CatalogService.PricingNote : null)">@PriceLabel(price)</td>
+                                            <td>@Display.Price(price.Input)</td>
+                                            <td>@Display.Price(price.CachedInput)</td>
+                                            <td>@Display.Price(price.Output)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
                     <div class="model-meta muted">
                         @if (model.Downloads is { } downloads)
                         {
@@ -336,6 +357,19 @@
         long largest = sizes.Max();
         return smallest == largest ? Display.Bytes(smallest) : $"{Display.Bytes(smallest)} – {Display.Bytes(largest)}";
     }
+
+    /// <summary>Names a pricing row by the tag it is restricted to and by its time band, as in "120b" or "off-peak".</summary>
+    private static string PriceLabel(CatalogPrice price) => (price.Variant, price.IsOffPeak) switch
+    {
+        // A tag-specific off-peak rate needs both qualifiers.
+        ({ } variant, true) => $"{variant} · off-peak",
+        // A tag-specific rate applies at any time.
+        ({ } variant, false) => variant,
+        // The discounted band of a model-wide rate.
+        (null, true) => "off-peak",
+        // The model-wide rate, which is the peak rate when an off-peak one exists.
+        (null, false) => "standard"
+    };
 
     /// <summary>Number of tags of a model already installed on the server.</summary>
     private int InstalledTagCount(CatalogModel model)

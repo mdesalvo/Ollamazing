@@ -27,6 +27,17 @@ public static class Display
         return $"{value.ToString(format, CultureInfo.InvariantCulture)} {units[unitIndex]}";
     }
 
+    /// <summary>Formats a rate in US dollars as ollama.com prints it, as in "$0.30" or "$0.006".</summary>
+    public static string Price(decimal? price)
+    {
+        // Rates that do not apply to the model are shown as a dash.
+        if (price is not { } amount)
+            return "–";
+
+        // Cents are always shown; sub-cent rates keep the digits that make them non-zero.
+        return $"${amount.ToString("0.00##", CultureInfo.InvariantCulture)}";
+    }
+
     /// <summary>Formats a large counter compactly, as in "79.4K" downloads.</summary>
     public static string Count(long count) => count switch
     {
