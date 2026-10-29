@@ -2,7 +2,6 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
-using Ollamazing.Web.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Ollamazing.Web.Catalog;

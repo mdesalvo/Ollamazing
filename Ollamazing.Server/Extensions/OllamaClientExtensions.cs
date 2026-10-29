@@ -4,8 +4,9 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using OllamaSharp;
 using OllamaSharp.Models;
+using Ollamazing.Server.Account;
 
-namespace Ollamazing.Web.Ollama;
+namespace Ollamazing.Server.Extensions;
 
 /// <summary>Operations missing from OllamaSharp, built on <see cref="IOllamaApiClient"/> in the style of its own extensions.</summary>
 public static class OllamaClientExtensions

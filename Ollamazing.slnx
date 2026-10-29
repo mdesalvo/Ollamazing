@@ -1,3 +1,4 @@
 <Solution>
+  <Project Path="Ollamazing.Server/Ollamazing.Server.csproj" />
   <Project Path="Ollamazing.Web/Ollamazing.Web.csproj" />
 </Solution>

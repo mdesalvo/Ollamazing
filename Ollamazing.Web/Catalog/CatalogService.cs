@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Ollamazing.Web.Configuration;
 using Microsoft.Extensions.Options;
 
 namespace Ollamazing.Web.Catalog;

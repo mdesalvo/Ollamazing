@@ -1,10 +1,10 @@
+using System.Collections.Specialized;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Serialization;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.WebUtilities;
+using System.Web;
 
-namespace Ollamazing.Web.Ollama;
+namespace Ollamazing.Server.Account;
 
 /// <summary>Link between the local server and an ollama.com account, as reported by <c>POST /api/me</c>.</summary>
 /// <param name="User">Profile of the signed-in account; null when the server key is not linked to any account.</param>
@@ -55,10 +55,9 @@ public sealed record AccountStatus(UserResponse? User, string? SignInUrl)
             return this;
 
         // Every other parameter, the key above all, is carried over unchanged and in the same order.
-        Dictionary<string, string?> signInParameters = QueryHelpers.ParseQuery(signInUri.Query)
-            .ToDictionary(parameter => parameter.Key, parameter => (string?)parameter.Value.ToString());
+        NameValueCollection signInParameters = HttpUtility.ParseQueryString(signInUri.Query);
         signInParameters["name"] = deviceName.Trim();
-        return this with { SignInUrl = new UriBuilder(signInUri) { Query = QueryString.Create(signInParameters).ToUriComponent() }.Uri.AbsoluteUri };
+        return this with { SignInUrl = new UriBuilder(signInUri) { Query = signInParameters.ToString() }.Uri.AbsoluteUri };
     }
 
     /// <summary>Reads one query parameter of the sign-in link, which is where the server describes itself to ollama.com.</summary>
@@ -67,7 +66,8 @@ public sealed record AccountStatus(UserResponse? User, string? SignInUrl)
         // Signed-in servers have no link to read from.
         if (SignInUrl is null || !Uri.TryCreate(SignInUrl, UriKind.Absolute, out Uri? signInUri))
             return null;
-        return QueryHelpers.ParseQuery(signInUri.Query).TryGetValue(parameterName, out var parameterValues) ? parameterValues.FirstOrDefault() : null;
+        // A missing parameter reads as null, which callers show as "not available".
+        return HttpUtility.ParseQueryString(signInUri.Query)[parameterName];
     }
 }
 

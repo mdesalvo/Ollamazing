@@ -1,9 +1,11 @@
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
-using Ollamazing.Web.Configuration;
-using Ollamazing.Web.Server;
 using OllamaSharp;
+using Ollamazing.Server.Configuration;
+using Ollamazing.Server.Extensions;
+using Ollamazing.Server.Status;
 
-namespace Ollamazing.Web.Ollama;
+namespace Ollamazing.Server.Account;
 
 /// <summary>Publishes to every circuit whether the local server is linked to an ollama.com account, and to which one.</summary>
 /// <remarks>

@@ -1,8 +1,9 @@
-using Ollamazing.Web.Server;
+using Microsoft.Extensions.Logging;
 using OllamaSharp;
 using OllamaSharp.Models;
+using Ollamazing.Server.Status;
 
-namespace Ollamazing.Web.Ollama;
+namespace Ollamazing.Server.Pulls;
 
 /// <summary>Lifecycle of a model download.</summary>
 public enum PullState
