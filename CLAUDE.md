@@ -10,6 +10,7 @@ Dashboard Blazor Server (interattività server via SignalR, .NET 10) che fa da f
 - **Download** (pull) dei modelli in background, con avanzamento in tempo reale.
 - **Server**: stato di Ollama, avvio/arresto/riavvio, modelli caricati in memoria, log.
 - **Modelli locali**: aggiorna (re-pull), elimina, scalda (carica in memoria), scarica dalla memoria, dettagli.
+- **Account**: pairing del server con l'account ollama.com, crediti, consumi per modello, sign-out.
 
 ## Struttura
 
@@ -18,7 +19,7 @@ Ollamazing.slnx              solution (formato slnx)
 Ollamazing.Web/              unico progetto, niente cartella src/
   Configuration/            opzioni (sezioni Ollama, ServerControl, Catalog di appsettings.json)
   Catalog/                  scraping HTML di ollama.com (AngleSharp), cache su disco, motore a faccette
-  Ollama/                   PullManager (download in background) + extension method su IOllamaApiClient
+  Ollama/                   PullManager (download in background), AccountMonitor, extension method su IOllamaApiClient
   Server/                   controllo del processo `ollama serve` + monitor dello stato condiviso
   Components/               UI Razor: Layout, Pages (*Page.razor), Shared
 ```
@@ -52,7 +53,12 @@ dotnet run --project Ollamazing.Web          # http://localhost:5222
   - le tariffe cloud per MTok sono solo in `/pricing`, sezione `#model-pricing`: righe collegate a `/library/<nome>`, con variante opzionale (`gpt-oss:120b`) e suffisso `(Off-Peak)`;
   - se il markup cambia, si corregge solo `Catalog/OllamaCatalogScraper.cs`;
   - le richieste sono limitate da `Catalog:MaxConcurrentRequests` e la cache sta in `Ollamazing.Web/data/` (non committare).
-- **Stato condiviso:** `CatalogService`, `PullManager` e `ServerStatusMonitor` sono singleton che notificano con eventi.
+- **Account ollama.com:** l'account è legato alla chiave ed25519 del server (`~/.ollama`), non a Ollamazing.
+  - Endpoint del server locale (non coperti da OllamaSharp): `POST /api/me` (profilo, oppure 401 con `signin_url`), `POST /api/signout`, `GET /api/balance`, `GET /api/usage?range=24h|7d|30d&group_by=model`.
+  - `POST /api/signout` revoca la chiave anche su ollama.com (verificato): il dispositivo sparisce dall'account e il nuovo login rifà il pairing.
+  - Il pairing è l'handshake di `ollama signin`: si apre `signin_url` (solo se `https://ollama.com`), l'utente approva su ollama.com, la pagina interroga `/api/me` finché non risulta collegato. Mai credenziali o chiave privata in Ollamazing.
+  - Le extension usano un `HttpClient` proprio sull'`Uri` del client, perché OllamaSharp non espone il suo.
+- **Stato condiviso:** `CatalogService`, `PullManager`, `ServerStatusMonitor` e `AccountMonitor` sono singleton che notificano con eventi.
   - I componenti ereditano `LiveComponentBase` e si iscrivono con `Watch(...)`.
   - `ServerStatusMonitor.Current` contiene modelli installati e residenti: è l'unica fonte per le pagine. Dopo un'operazione si chiama `ProbeNowAsync()`.
 - **Razor:** niente stringhe tra doppi apici dentro `@onclick="..."`; si sposta la lambda in un metodo.

@@ -1,0 +1,471 @@
+@page "/account"
+@inherits LiveComponentBase
+@inject AccountMonitor AccountMonitor
+@inject ServerStatusMonitor StatusMonitor
+@inject OllamaServerController ServerController
+@inject IOllamaApiClient OllamaClient
+
+<PageTitle>Account · Ollamazing</PageTitle>
+
+@{
+    ServerStatus serverStatus = StatusMonitor.Current;
+    AccountStatus? account = AccountMonitor.Current;
+}
+
+<header class="page-header">
+    <div>
+        <h1>ollama.com account</h1>
+        <p class="muted">Cloud models run on ollama.com and are billed to the account linked to this server.</p>
+    </div>
+    @if (account is { IsSignedIn: true })
+    {
+        <div class="header-actions">
+            <button class="btn" disabled="@isLoadingAccountData" @onclick="LoadAccountDataAsync">Refresh</button>
+            @if (isConfirmingSignOut)
+            {
+                <button class="btn is-danger" disabled="@isSigningOut" @onclick="SignOutAsync"
+                        title="Revokes the key of this server on ollama.com: cloud models stop until the account is linked again">Confirm sign out</button>
+                <button class="btn is-ghost" disabled="@isSigningOut" @onclick="CancelSignOut">Cancel</button>
+            }
+            else
+            {
+                <button class="btn is-danger" @onclick="AskSignOut">Sign out</button>
+            }
+        </div>
+    }
+</header>
+
+@if (actionError is not null)
+{
+    <div class="alert is-error">@actionError</div>
+}
+
+@if (serverStatus.IsInitial)
+{
+    <p class="muted">Checking Ollama…</p>
+}
+else if (!serverStatus.IsReachable)
+{
+    <section class="card pairing">
+        <h2>The Ollama server is not running</h2>
+        <p class="muted">
+            The account is linked to the key of the local server, so linking it and reading its credits need the server running.
+        </p>
+        <div class="button-row">
+            <button class="btn is-primary" disabled="@(isStartingServer || serverStatus.Process.IsRunning)" @onclick="StartServerAsync">
+                @(isStartingServer || serverStatus.Process.IsRunning ? "Starting…" : "Start server")
+            </button>
+            <a class="btn is-ghost" href="server">Server panel</a>
+        </div>
+    </section>
+}
+else if (account is null)
+{
+    @if (AccountMonitor.LastError is { } accountError)
+    {
+        <div class="alert is-error">
+            The server could not reach ollama.com: @accountError
+            <button class="link alert-dismiss" @onclick="RetryAccountCheckAsync">Retry</button>
+        </div>
+    }
+    else
+    {
+        <p class="muted">Checking the account…</p>
+    }
+}
+else if (!account.IsSignedIn)
+{
+    <section class="card pairing">
+        <h2>Link your ollama.com account</h2>
+        <p class="muted">
+            Linking authorizes the key of this server on ollama.com: cloud models then run under your account,
+            drawing on its plan allowance and purchased credits. Your password never passes through Ollamazing.
+        </p>
+
+        <ol class="pairing-steps">
+            <li class="@(isWaitingForApproval ? "is-done" : "is-current")">
+                <span class="pairing-step-title">Open ollama.com</span>
+                <span class="muted">Sign in there if asked. This server is listed as <code>@(account.DeviceName ?? "this computer")</code>.</span>
+            </li>
+            <li class="@(isWaitingForApproval ? "is-current" : "")">
+                <span class="pairing-step-title">Approve the connection</span>
+                <span class="muted">Confirm on the page that opens in a new tab.</span>
+                @if (account.KeyFingerprint is { } keyFingerprint)
+                {
+                    <span class="muted small">Key being linked: <code>@keyFingerprint</code>. It must match the key ollama.com shows for this device.</span>
+                }
+            </li>
+            <li>
+                <span class="pairing-step-title">Back to Ollamazing</span>
+                <span class="muted">The approval is detected automatically; there is nothing to copy or paste.</span>
+            </li>
+        </ol>
+
+        @if (isWaitingForApproval)
+        {
+            <div class="pairing-wait">
+                <span class="spinner" aria-hidden="true"></span>
+                <span>Waiting for approval on ollama.com…</span>
+                <a href="@account.SignInUrl" target="_blank" rel="noopener noreferrer">Open the page again</a>
+                <button class="link" @onclick="CancelPairing">Cancel</button>
+            </div>
+        }
+        else
+        {
+            @if (hasPairingTimedOut)
+            {
+                <div class="alert is-warning">No approval arrived within @((int)PairingTimeout.TotalMinutes) minutes. Start again when you are ready.</div>
+            }
+            <a class="btn is-primary" href="@account.SignInUrl" target="_blank" rel="noopener noreferrer" @onclick="BeginPairingAsync">Link account on ollama.com</a>
+        }
+    </section>
+}
+else
+{
+    UserResponse user = account.User!;
+    UsageTotals? usageTotals = usage?.Totals;
+
+    @if (hasJustPaired)
+    {
+        <div class="alert is-success">Account linked: cloud models now run as @user.Name.</div>
+    }
+
+    <section class="card account-profile">
+        @if (IsSecureImage(user.AvatarUrl))
+        {
+            <img class="avatar" src="@user.AvatarUrl" alt="" referrerpolicy="no-referrer" />
+        }
+        <div class="account-identity">
+            <span class="account-name">@DisplayName(user)</span>
+            <span class="muted small">@user.Name · @user.Email</span>
+        </div>
+        <span class="spacer"></span>
+        @if (!string.IsNullOrEmpty(user.Plan))
+        {
+            <span class="chip">@user.Plan plan</span>
+        }
+    </section>
+
+    @if (accountDataError is not null)
+    {
+        <div class="alert is-error">@accountDataError</div>
+    }
+
+    <section class="stat-grid">
+        <div class="card stat">
+            <span class="stat-label">Purchased credits</span>
+            <span class="stat-value">@(balance?.Purchased is { } purchased ? Display.Price(purchased.BalanceUsd) : "–")</span>
+            <span class="stat-detail muted">spent once the plan allowance runs out</span>
+        </div>
+        <div class="card stat">
+            <span class="stat-label">Plan allowance</span>
+            <span class="stat-value">
+                @(balance?.Included is { } included ? $"{Display.Price(included.BalanceUsd)} of {Display.Price(included.AllowanceUsd)}" : "–")
+            </span>
+            <span class="stat-detail muted">
+                @(balance?.Included?.Period is { } period ? $"renews {Display.Relative(period.Until)}" : "left in this period")
+            </span>
+        </div>
+        <div class="card stat">
+            <span class="stat-label">Spent · last @RangeLabel(usageRange)</span>
+            <span class="stat-value">@(usageTotals is null ? "–" : Display.Price(usageTotals.UsageUsd))</span>
+            <span class="stat-detail muted">@(usageTotals is null ? "loading…" : $"{usageTotals.RequestCount:N0} cloud requests")</span>
+        </div>
+    </section>
+
+    <section class="card">
+        <div class="section-head">
+            <h2>Cloud usage</h2>
+            <span class="spacer"></span>
+            <div class="segmented" role="group" aria-label="Usage range">
+                @foreach (string range in UsageRanges)
+                {
+                    <button class="@(range == usageRange ? "is-selected" : "")" disabled="@isLoadingAccountData" @onclick="() => ChangeUsageRangeAsync(range)">@range</button>
+                }
+            </div>
+        </div>
+
+        @if (usageTotals is null)
+        {
+            <p class="muted">@(isLoadingAccountData ? "Loading usage…" : "Usage is not available.")</p>
+        }
+        else if (usageTotals.Groups.Count == 0)
+        {
+            <p class="muted">No cloud requests in the last @RangeLabel(usageRange).</p>
+        }
+        else
+        {
+            <table class="table usage-table">
+                <thead><tr><th>Model</th><th>Requests</th><th>Input</th><th>Cached input</th><th>Output</th><th>Cost</th></tr></thead>
+                <tbody>
+                    @foreach (ModelUsage modelUsage in usageTotals.Groups.OrderByDescending(group => group.UsageUsd).ThenByDescending(group => group.RequestCount))
+                    {
+                        <tr>
+                            <td><code>@modelUsage.Model</code></td>
+                            <td>@modelUsage.RequestCount.ToString("N0")</td>
+                            <td>@Display.Count(modelUsage.InputTokens)</td>
+                            <td>@Display.Count(modelUsage.CachedInputTokens)</td>
+                            <td>@Display.Count(modelUsage.OutputTokens)</td>
+                            <td>@Display.Price(modelUsage.UsageUsd)</td>
+                        </tr>
+                    }
+                </tbody>
+                @if (usageTotals.Groups.Count > 1)
+                {
+                    <tfoot>
+                        <tr>
+                            <td>Total</td>
+                            <td>@usageTotals.RequestCount.ToString("N0")</td>
+                            <td>@Display.Count(usageTotals.InputTokens)</td>
+                            <td>@Display.Count(usageTotals.CachedInputTokens)</td>
+                            <td>@Display.Count(usageTotals.OutputTokens)</td>
+                            <td>@Display.Price(usageTotals.UsageUsd)</td>
+                        </tr>
+                    </tfoot>
+                }
+            </table>
+        }
+    </section>
+}
+
+@code {
+    /// <summary>Delay between two account checks while the user approves the link on ollama.com.</summary>
+    private static readonly TimeSpan PairingPollInterval = TimeSpan.FromSeconds(3);
+
+    /// <summary>How long the page waits for the approval before giving up, so an abandoned tab stops polling.</summary>
+    private static readonly TimeSpan PairingTimeout = TimeSpan.FromMinutes(10);
+
+    /// <summary>Ranges accepted by the usage endpoint of ollama.com.</summary>
+    private static readonly string[] UsageRanges = ["24h", "7d", "30d"];
+
+    /// <summary>Stops the approval polling when the user cancels or leaves the page.</summary>
+    private CancellationTokenSource? pairingCancellation;
+
+    private bool isWaitingForApproval;
+    private bool hasPairingTimedOut;
+
+    /// <summary>True when the wait was stopped from the Cancel link rather than by the deadline.</summary>
+    private bool isPairingCancelledByUser;
+
+    /// <summary>True after a link approved from this page, to confirm the outcome above the account details.</summary>
+    private bool hasJustPaired;
+
+    private bool isStartingServer;
+
+    /// <summary>A second click is required because signing out revokes the server key on ollama.com and stops every cloud model.</summary>
+    private bool isConfirmingSignOut;
+
+    private bool isSigningOut;
+
+    /// <summary>Failure of a user action (start, sign out), shown at the top of the page.</summary>
+    private string? actionError;
+
+    private BalanceResponse? balance;
+    private UsageResponse? usage;
+    private string usageRange = "7d";
+    private bool isLoadingAccountData;
+    private string? accountDataError;
+
+    /// <summary>Account whose credits and usage are on screen, so a different account triggers a fresh load.</summary>
+    private string? loadedAccountId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Account and server status both decide which screen is shown.
+        Watch(handler => AccountMonitor.Changed += handler, handler => AccountMonitor.Changed -= handler);
+        Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
+        AccountMonitor.Changed += OnAccountChanged;
+
+        // A page opened before any check asks right away instead of waiting for the next server restart.
+        if (AccountMonitor.Current is null && StatusMonitor.Current.IsReachable)
+            await AccountMonitor.RefreshAsync();
+
+        // A linked account shows its credits as soon as the page opens.
+        await SyncWithAccountAsync();
+    }
+
+    public override void Dispose()
+    {
+        AccountMonitor.Changed -= OnAccountChanged;
+        pairingCancellation?.Cancel();
+        pairingCancellation?.Dispose();
+        base.Dispose();
+    }
+
+    /// <summary>Follows account changes made anywhere, such as an approval detected by the polling or a sign-out in another tab.</summary>
+    private void OnAccountChanged() => _ = InvokeAsync(SyncWithAccountAsync);
+
+    /// <summary>Loads the credits of a newly linked account and drops those of an account no longer linked.</summary>
+    private async Task SyncWithAccountAsync()
+    {
+        string? accountId = AccountMonitor.Current?.User?.Id;
+
+        // An unchanged account keeps the figures already on screen.
+        if (accountId == loadedAccountId)
+            return;
+
+        loadedAccountId = accountId;
+        balance = null;
+        usage = null;
+        accountDataError = null;
+
+        // A signed-out or unknown account has no credits to read.
+        if (accountId is null)
+        {
+            StateHasChanged();
+            return;
+        }
+
+        await LoadAccountDataAsync();
+    }
+
+    /// <summary>Reads balance and usage of the linked account in parallel.</summary>
+    private async Task LoadAccountDataAsync()
+    {
+        isLoadingAccountData = true;
+        accountDataError = null;
+        StateHasChanged();
+        try
+        {
+            // Both figures come from ollama.com through the server, so they are requested together.
+            Task<BalanceResponse> balanceTask = OllamaClient.GetBalanceAsync();
+            Task<UsageResponse> usageTask = OllamaClient.GetUsageAsync(usageRange);
+            balance = await balanceTask;
+            usage = await usageTask;
+        }
+        catch (Exception loadError) when (loadError is HttpRequestException or TaskCanceledException)
+        {
+            // The account stays linked; only its figures are missing until the next refresh.
+            accountDataError = $"Reading credits and usage failed: {loadError.Message}";
+        }
+        finally
+        {
+            isLoadingAccountData = false;
+        }
+        StateHasChanged();
+    }
+
+    /// <summary>Switches the usage table to another range; the balance does not depend on it.</summary>
+    private async Task ChangeUsageRangeAsync(string range)
+    {
+        usageRange = range;
+        await LoadAccountDataAsync();
+    }
+
+    /// <summary>Polls the server while the user approves the link in the ollama.com tab opened by the same click.</summary>
+    private async Task BeginPairingAsync()
+    {
+        // A previous wait, if any, is replaced by this one.
+        pairingCancellation?.Cancel();
+        pairingCancellation?.Dispose();
+        pairingCancellation = new CancellationTokenSource(PairingTimeout);
+        CancellationToken pairingToken = pairingCancellation.Token;
+
+        // The steps switch to "approve" and any outcome of a previous attempt is cleared.
+        isWaitingForApproval = true;
+        hasPairingTimedOut = false;
+        actionError = null;
+        try
+        {
+            // Each check is published to every circuit, so the approval also updates the sidebar and other tabs.
+            using PeriodicTimer pollTimer = new(PairingPollInterval);
+            while (await pollTimer.WaitForNextTickAsync(pairingToken))
+            {
+                await AccountMonitor.RefreshAsync(pairingToken);
+
+                // The approval ends the wait; the account details replace the pairing screen.
+                if (AccountMonitor.Current is { IsSignedIn: true })
+                {
+                    hasJustPaired = true;
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (pairingToken.IsCancellationRequested)
+        {
+            // Only the deadline is worth reporting; a cancel by the user is silent.
+            hasPairingTimedOut = !isPairingCancelledByUser;
+        }
+        finally
+        {
+            // The pairing screen returns to its initial step, ready for another attempt.
+            isWaitingForApproval = false;
+            isPairingCancelledByUser = false;
+        }
+    }
+
+    /// <summary>Stops waiting for the approval; the link can be started again at any time.</summary>
+    private void CancelPairing()
+    {
+        isPairingCancelledByUser = true;
+        pairingCancellation?.Cancel();
+    }
+
+    /// <summary>Asks the server for the account again after ollama.com could not be reached.</summary>
+    private Task RetryAccountCheckAsync() => AccountMonitor.RefreshAsync();
+
+    /// <summary>Starts the server from this page, since linking cannot happen without it.</summary>
+    private async Task StartServerAsync()
+    {
+        isStartingServer = true;
+        actionError = null;
+
+        // Starting waits on the process, so it runs off the circuit thread.
+        ServerActionResult result = await Task.Run(() => ServerController.Execute(ServerAction.Start));
+
+        // A failed start explains itself; a successful one is followed by the account check once the API answers.
+        if (!result.Succeeded)
+            actionError = result.Message;
+        await StatusMonitor.ProbeNowAsync();
+        isStartingServer = false;
+    }
+
+    private void AskSignOut() => isConfirmingSignOut = true;
+
+    private void CancelSignOut() => isConfirmingSignOut = false;
+
+    /// <summary>Unlinks the account after confirmation; the pairing screen comes back with a fresh link.</summary>
+    private async Task SignOutAsync()
+    {
+        isSigningOut = true;
+        actionError = null;
+        try
+        {
+            await AccountMonitor.SignOutAsync();
+            hasJustPaired = false;
+        }
+        catch (Exception signOutError) when (signOutError is HttpRequestException or TaskCanceledException)
+        {
+            // The account is still linked and stays on screen.
+            actionError = $"Sign out failed: {signOutError.Message}";
+        }
+        finally
+        {
+            isSigningOut = false;
+            isConfirmingSignOut = false;
+        }
+    }
+
+    /// <summary>Avatars are loaded only over HTTPS, so the profile picture cannot downgrade the page or leak it to plain HTTP.</summary>
+    private static bool IsSecureImage(string? imageUrl)
+        => Uri.TryCreate(imageUrl, UriKind.Absolute, out Uri? imageUri) && imageUri.Scheme == Uri.UriSchemeHttps;
+
+    /// <summary>Full name from the profile, falling back to the user name when the profile has none.</summary>
+    private static string DisplayName(UserResponse user)
+    {
+        string fullName = $"{user.FirstName} {user.LastName}".Trim();
+        return fullName.Length > 0 ? fullName : user.Name ?? "ollama.com user";
+    }
+
+    /// <summary>Spells out a usage range for sentences such as "last 7 days".</summary>
+    private static string RangeLabel(string range) => range switch
+    {
+        // The hourly range reads better in hours.
+        "24h" => "24 hours",
+        // The daily ranges keep their day count.
+        "7d" => "7 days",
+        "30d" => "30 days",
+        // An unknown range is shown as ollama.com names it.
+        _ => range
+    };
+}

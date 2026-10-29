@@ -2,6 +2,7 @@
 @implements IDisposable
 @inject ServerStatusMonitor StatusMonitor
 @inject PullManager PullManager
+@inject AccountMonitor AccountMonitor
 
 <div class="shell">
     <aside class="sidebar">
@@ -27,6 +28,13 @@
                 }
             </NavLink>
             <NavLink class="nav-link" href="server">Server</NavLink>
+            <NavLink class="nav-link" href="account" title="@AccountTitle">
+                Account
+                @if (AccountMonitor.Current is { } account)
+                {
+                    <span class="status-dot @(account.IsSignedIn ? "is-up" : "is-warning")"></span>
+                }
+            </NavLink>
         </nav>
 
         <a class="server-pill" href="server" title="Checked @Display.Relative(StatusMonitor.Current.CheckedAt)">
@@ -64,11 +72,23 @@
         _ => "Ollama offline"
     };
 
+    /// <summary>Tooltip of the account entry: who cloud requests are billed to, or that no account is linked.</summary>
+    private string AccountTitle => AccountMonitor.Current switch
+    {
+        // A linked account is named, so a wrong account is noticed at a glance.
+        { User.Name: { } userName } => $"Linked to ollama.com as {userName}",
+        // A reachable server without a linked key cannot run paid cloud models.
+        { IsSignedIn: false } => "No ollama.com account linked",
+        // Unknown while the server is down or not checked yet.
+        _ => "ollama.com account"
+    };
+
     protected override void OnInitialized()
     {
-        // The sidebar badges follow both the server status and the download queue.
+        // The sidebar badges follow the server status, the download queue and the linked account.
         StatusMonitor.Changed += Rerender;
         PullManager.Changed += Rerender;
+        AccountMonitor.Changed += Rerender;
     }
 
     /// <summary>Marshals a background notification onto the circuit dispatcher.</summary>
@@ -78,5 +98,6 @@
     {
         StatusMonitor.Changed -= Rerender;
         PullManager.Changed -= Rerender;
+        AccountMonitor.Changed -= Rerender;
     }
 }

@@ -27,10 +27,10 @@ public static class Display
         return $"{value.ToString(format, CultureInfo.InvariantCulture)} {units[unitIndex]}";
     }
 
-    /// <summary>Formats a rate in US dollars as ollama.com prints it, as in "$0.30" or "$0.006".</summary>
+    /// <summary>Formats an amount in US dollars as ollama.com prints it, as in "$30.00" or "$0.006".</summary>
     public static string Price(decimal? price)
     {
-        // Rates that do not apply to the model are shown as a dash.
+        // Amounts that do not apply, such as a rate the model lacks, are shown as a dash.
         if (price is not { } amount)
             return "–";
 

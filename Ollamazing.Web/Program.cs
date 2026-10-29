@@ -35,6 +35,7 @@ builder.Services.AddSingleton<CatalogService>();
 builder.Services.AddSingleton<PullManager>();
 builder.Services.AddSingleton<OllamaServerController>();
 builder.Services.AddSingleton<ServerStatusMonitor>();
+builder.Services.AddSingleton<AccountMonitor>();
 
 // Auto-start runs before the first status probe, so the dashboard opens on a server that is already coming up.
 builder.Services.AddHostedService<ServerAutoStartService>();

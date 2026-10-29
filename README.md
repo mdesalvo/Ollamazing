@@ -12,6 +12,19 @@ Ollamazing is a Blazor Server dashboard for [Ollama](https://ollama.com): browse
 - **Downloads**: pulls run in background with live progress, survive page navigation, and can be cancelled and retried. Any reference can be typed by hand.
 - **Local models**: list installed models with size, parameters, quantization and residency. You can update (re-pull), delete, warm up (load in memory), unload and inspect each one.
 - **Server**: API reachability and version, the hosting process, loaded models with GPU share and expiry, and the server log, plus start, stop and restart.
+- **Account**: link the server to your ollama.com account, see purchased credits, plan allowance and cloud usage per model, and sign out.
+
+## ollama.com account
+
+Cloud models run on ollama.com and are billed to the account linked to the local server. The link uses the same handshake as `ollama signin`:
+
+1. The server holds an ed25519 key pair in `~/.ollama`. The private key never leaves it.
+2. On the Account page, **Link account on ollama.com** opens ollama.com with the public key and the device name. You sign in there, never through Ollamazing, and approve the device.
+3. Ollamazing polls the server until the link is active, then shows profile, credits and usage.
+
+The page shows the SHA256 fingerprint of the key being linked, in the format of `ssh-keygen -l`, so you can check it against the device listed on ollama.com. Sign-in links are opened only when they point to `https://ollama.com`.
+
+**Sign out** revokes the server key on ollama.com, so the device disappears from the account and cloud models stop working. Linking again repeats the same handshake with the same key.
 
 ## Requirements
 
@@ -36,6 +49,7 @@ All settings live in `Ollamazing.Web/appsettings.json`.
 | `Ollama` | `BaseUrl` | Address of the Ollama API |
 | | `WarmUpKeepAlive` | How long a warmed-up model stays loaded (`30m`, `-1` = forever) |
 | | `StatusPollSeconds` | Interval of the server status probe |
+| | `DeviceName` | Name under which ollama.com lists this server once linked (default `Ollamazing`; empty keeps the host name) |
 | `ServerControl` | `ExecutablePath` | `ollama` executable used for `ollama serve` (looked up in PATH) |
 | | `Environment` | Extra variables for the server Ollamazing starts, e.g. `OLLAMA_MODELS` |
 | | `StartOnLaunch` | Start the server when Ollamazing boots and none is running |

@@ -13,6 +13,10 @@ public sealed class OllamaOptions
 
     /// <summary>Interval between two status probes of the server, in seconds.</summary>
     public int StatusPollSeconds { get; set; } = 3;
+
+    /// <summary>Name under which ollama.com lists this server once its account is linked; empty keeps the host name Ollama proposes.</summary>
+    /// <remarks>It applies at pairing time: an already linked server keeps its name until it signs out and links again.</remarks>
+    public string DeviceName { get; set; } = "Ollamazing";
 }
 
 /// <summary>Settings for starting and stopping the Ollama server from the control panel.</summary>
