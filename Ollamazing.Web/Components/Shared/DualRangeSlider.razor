@@ -1,13 +1,13 @@
-@* Two-thumb slider over a discrete scale of steps; the parent owns the selected indexes. *@
+@* Two-thumb slider over a discrete scale of steps, which Fluent UI does not offer; the parent owns the selected indexes. *@
 
-<div class="dual-range @(Disabled ? "is-disabled" : "")">
+<div class="dual-range @(Disabled ? "is-disabled" : "") @(IsLowOnTop ? "is-low-on-top" : "")">
     <div class="dual-range-track">
         <div class="dual-range-fill" style="left:@Percent(LowIndex)%; right:@(100 - Percent(HighIndex))%"></div>
     </div>
-    <input type="range" min="0" max="@MaxIndex" step="1" value="@LowIndex" disabled="@Disabled"
-           aria-label="Minimum" @oninput="OnLowInput" />
-    <input type="range" min="0" max="@MaxIndex" step="1" value="@HighIndex" disabled="@Disabled"
-           aria-label="Maximum" @oninput="OnHighInput" />
+    <input class="dual-range-low" type="range" min="0" max="@MaxIndex" step="1" value="@LowIndex" disabled="@Disabled"
+           aria-label="@($"{AriaLabel} from")" aria-valuetext="@ValueText(LowIndex)" @oninput="OnLowInput" />
+    <input class="dual-range-high" type="range" min="0" max="@MaxIndex" step="1" value="@HighIndex" disabled="@Disabled"
+           aria-label="@($"{AriaLabel} up to")" aria-valuetext="@ValueText(HighIndex)" @oninput="OnHighInput" />
 </div>
 
 @code {
@@ -23,14 +23,35 @@
 
     [Parameter] public bool Disabled { get; set; }
 
+    /// <summary>Name of the range for assistive technologies, such as "Memory size".</summary>
+    [Parameter] public string AriaLabel { get; set; } = "Range";
+
+    /// <summary>Spoken value of a step, such as "8 GB"; the bare index is read when absent.</summary>
+    [Parameter] public Func<int, string>? StepLabel { get; set; }
+
+    /// <summary>True when both thumbs sit at the end of the scale, where only the lower one can still move.</summary>
+    private bool IsLowOnTop => LowIndex >= MaxIndex;
+
     /// <summary>Horizontal position of a step on the track, from 0 to 100.</summary>
     private double Percent(int index) => MaxIndex == 0 ? 0 : index * 100.0 / MaxIndex;
 
-    /// <summary>Moves the lower bound, never past the upper one.</summary>
-    private Task OnLowInput(ChangeEventArgs change)
-        => RangeChanged.InvokeAsync((Math.Min(int.Parse(change.Value?.ToString() ?? "0"), HighIndex), HighIndex));
+    private string ValueText(int index) => StepLabel?.Invoke(index) ?? index.ToString();
 
-    /// <summary>Moves the upper bound, never below the lower one.</summary>
+    /// <summary>Moves the lower bound; dragged past the upper one, it pushes the upper one along.</summary>
+    private Task OnLowInput(ChangeEventArgs change)
+    {
+        int lowIndex = ReadIndex(change);
+        return RangeChanged.InvokeAsync((lowIndex, Math.Max(lowIndex, HighIndex)));
+    }
+
+    /// <summary>Moves the upper bound; dragged below the lower one, it pushes the lower one along.</summary>
     private Task OnHighInput(ChangeEventArgs change)
-        => RangeChanged.InvokeAsync((LowIndex, Math.Max(int.Parse(change.Value?.ToString() ?? "0"), LowIndex)));
+    {
+        int highIndex = ReadIndex(change);
+        return RangeChanged.InvokeAsync((Math.Min(LowIndex, highIndex), highIndex));
+    }
+
+    /// <summary>Step chosen by a thumb, kept inside the scale whatever the browser reports.</summary>
+    private int ReadIndex(ChangeEventArgs change)
+        => int.TryParse(change.Value?.ToString(), out int index) ? Math.Clamp(index, 0, MaxIndex) : 0;
 }

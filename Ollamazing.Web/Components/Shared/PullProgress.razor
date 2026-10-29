@@ -1,15 +1,19 @@
 @* Compact progress of a running download, shared by catalog, local models and downloads pages. *@
 
-<div class="pull-progress" title="@Job.LastProgress?.Status">
-    <div class="progress"><div class="progress-bar @(HasByteCounts ? "" : "is-indeterminate")" style="width:@(HasByteCounts ? Job.LastProgress!.Percent : 100)%"></div></div>
-    <span class="pull-progress-label">@Label</span>
-</div>
+<FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Width="200px">
+    @* Without byte counts (manifest, verification) the bar runs indeterminate. *@
+    <FluentProgressBar Value="@PercentDone" Max="100" Width="120px" Tooltip="@Job.LastProgress?.Status" />
+    <FluentText Size="TextSize.Size200" Truncate="true" Class="muted">@Label</FluentText>
+</FluentStack>
 
 @code {
     [Parameter, EditorRequired] public PullJob Job { get; set; } = null!;
 
     /// <summary>Byte counts exist only while a layer downloads; manifest and verification steps have none.</summary>
     private bool HasByteCounts => Job.LastProgress is { Total: > 0 };
+
+    /// <summary>Whole percentage of the current layer; null leaves the bar indeterminate.</summary>
+    private int? PercentDone => HasByteCounts ? (int)Math.Round(Job.LastProgress!.Percent) : null;
 
     /// <summary>Percentage of the current layer, or the status line while no layer is downloading.</summary>
     private string Label => HasByteCounts

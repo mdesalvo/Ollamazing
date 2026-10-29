@@ -6,17 +6,23 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <base href="/" />
     <ResourcePreloader />
-    <link rel="stylesheet" href="@Assets["app.css"]" />
+    @* Fluent's component styles come with the bundle; app.css only adds what no component offers. *@
     <link rel="stylesheet" href="@Assets["Ollamazing.Web.styles.css"]" />
+    <link rel="stylesheet" href="@Assets["app.css"]" />
     <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🦙</text></svg>" />
     <ImportMap />
-    <HeadOutlet @rendermode="InteractiveServer" />
+    <HeadOutlet @rendermode="Interactive" />
 </head>
 
 <body>
-    <Routes @rendermode="InteractiveServer" />
+    <Routes @rendermode="Interactive" />
     <ReconnectModal />
     <script src="@Assets["_framework/blazor.web.js"]"></script>
 </body>
 
 </html>
+
+@code {
+    /// <summary>Server interactivity without prerender, so the page is drawn once, already in the Ollamazing theme.</summary>
+    private static readonly IComponentRenderMode Interactive = new InteractiveServerRenderMode(prerender: false);
+}

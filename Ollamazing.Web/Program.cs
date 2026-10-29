@@ -1,11 +1,16 @@
+using Microsoft.FluentUI.AspNetCore.Components;
 using Ollamazing.Server.Extensions;
 using Ollamazing.Web.Catalog;
 using Ollamazing.Web.Components;
 
-var builder = WebApplication.CreateBuilder(args);
+WebApplicationBuilder builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+// Fluent UI draws every control of the dashboard; on Blazor Server it needs a default HttpClient registered before it.
+builder.Services.AddHttpClient();
+builder.Services.AddFluentUIComponents();
 
 // Server control, status, account link and downloads come from the server library, shared by every open tab.
 builder.Services.AddOllamazingServer(builder.Configuration);
@@ -23,7 +28,7 @@ builder.Services.AddHttpClient<OllamaCatalogScraper>(client =>
 builder.Services.AddSingleton<CatalogService>();
 builder.Services.AddHostedService<CatalogStartupService>();
 
-var app = builder.Build();
+WebApplication app = builder.Build();
 
 if (!app.Environment.IsDevelopment())
 {
@@ -35,6 +40,6 @@ app.UseAntiforgery();
 
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
-    .AddInteractiveServerRenderMode();
+   .AddInteractiveServerRenderMode();
 
-app.Run();
+await app.RunAsync();

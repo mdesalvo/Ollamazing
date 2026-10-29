@@ -12,141 +12,117 @@
     ServerStatus status = StatusMonitor.Current;
 }
 
-<header class="page-header">
-    <div>
-        <h1>Ollama server</h1>
-        <p class="muted">@OllamaOptions.Value.BaseUrl · checked @Display.Relative(status.CheckedAt)</p>
-    </div>
-    <div class="header-actions">
-        <button class="btn is-primary" disabled="@(runningAction is not null || status.Process.IsRunning || status.IsReachable)" @onclick="() => ExecuteAsync(ServerAction.Start)">Start</button>
-        <button class="btn" disabled="@(runningAction is not null || !status.Process.IsRunning)" @onclick="() => ExecuteAsync(ServerAction.Restart)">Restart</button>
-        <button class="btn is-danger" disabled="@(runningAction is not null || !status.Process.IsRunning)" @onclick="() => ExecuteAsync(ServerAction.Stop)">Stop</button>
-    </div>
-</header>
+<PageHeader Title="Ollama server">
+    <Subtitle>@OllamaOptions.Value.BaseUrl · checked @Display.Relative(status.CheckedAt)</Subtitle>
+    <Actions>
+        <FluentButton Appearance="ButtonAppearance.Primary" Loading="@(runningAction == ServerAction.Start)"
+                      Disabled="@(runningAction is not null || status.Process.IsRunning || status.IsReachable)" OnClick="StartAsync">Start</FluentButton>
+        <FluentButton Loading="@(runningAction == ServerAction.Restart)" Disabled="@(runningAction is not null || !status.Process.IsRunning)" OnClick="RestartAsync">Restart</FluentButton>
+        <FluentButton Appearance="ButtonAppearance.Outline" Loading="@(runningAction == ServerAction.Stop)"
+                      Disabled="@(runningAction is not null || !status.Process.IsRunning)" OnClick="StopAsync">Stop</FluentButton>
+    </Actions>
+</PageHeader>
 
-@if (runningAction is not null)
+@if (lastResult is not null && runningAction is null)
 {
-    <div class="alert is-info">@runningAction in progress…</div>
-}
-else if (lastResult is not null)
-{
-    <div class="alert @(lastResult.Succeeded ? "is-success" : "is-error")">
-        <strong>@lastResult.Action</strong> · @lastResult.Message
-        <span class="muted small">(@Display.Relative(lastResult.ExecutedAt))</span>
-    </div>
+    <FluentMessageBar Intent="@(lastResult.Succeeded ? MessageBarIntent.Success : MessageBarIntent.Error)" Title="@lastResult.Action.ToString()" Margin="@Margin.Bottom4">
+        @lastResult.Message (@Display.Relative(lastResult.ExecutedAt))
+    </FluentMessageBar>
 }
 
-<section class="stat-grid">
-    <div class="card stat">
-        <span class="stat-label">API</span>
-        <span class="stat-value">
-            <span class="status-dot @(status.IsReachable ? "is-up" : status.IsInitial ? "is-unknown" : "is-down")"></span>
-            @(status.IsReachable ? "Reachable" : status.IsInitial ? "Checking…" : "Unreachable")
-        </span>
-        <span class="stat-detail muted">@(status.Version is null ? "no version" : $"version {status.Version}")</span>
-    </div>
-    <div class="card stat">
-        <span class="stat-label">Process</span>
-        <span class="stat-value">@(status.Process.IsRunning ? status.Process.IsOwned ? "Started by Ollamazing" : "Running externally" : "Not running")</span>
-        <span class="stat-detail muted">
-            @if (status.Process.ProcessId is { } processId)
-            {
-                <span>PID @processId</span>
-            }
-            @if (status.Process.RunningSince is { } runningSince)
-            {
-                <span> · up @Display.Duration(DateTimeOffset.Now - runningSince)</span>
-            }
-        </span>
-    </div>
-    <div class="card stat">
-        <span class="stat-label">In memory</span>
-        <span class="stat-value">@status.RunningModels.Count @(status.RunningModels.Count == 1 ? "model" : "models")</span>
-        <span class="stat-detail muted">@Display.Bytes(status.RunningModels.Sum(model => model.Size)) total · @Display.Bytes(status.RunningModels.Sum(model => model.SizeVram)) on GPU</span>
-    </div>
-    <div class="card stat">
-        <span class="stat-label">Installed</span>
-        <span class="stat-value">@status.LocalModels.Count @(status.LocalModels.Count == 1 ? "model" : "models")</span>
-        <span class="stat-detail muted">@Display.Bytes(status.LocalModels.Sum(model => model.Size)) on disk</span>
-    </div>
-</section>
+<FluentGrid Spacing="3">
+    <FluentGridItem Xs="12" Sm="6" Lg="3">
+        <StatCard Label="API" Detail="@(status.Version is null ? "no version" : $"version {status.Version}")">
+            <FluentBadge Appearance="BadgeAppearance.Filled" Color="@(status.IsReachable ? BadgeColor.Success : status.IsInitial ? BadgeColor.Subtle : BadgeColor.Danger)"
+                         Content="@(status.IsReachable ? "Reachable" : status.IsInitial ? "Checking…" : "Unreachable")" />
+        </StatCard>
+    </FluentGridItem>
+    <FluentGridItem Xs="12" Sm="6" Lg="3">
+        <StatCard Label="Process" Value="@ProcessLabel(status.Process)" Detail="@ProcessDetail(status.Process)" />
+    </FluentGridItem>
+    <FluentGridItem Xs="12" Sm="6" Lg="3">
+        <StatCard Label="In memory" Value="@ModelCount(status.RunningModels.Count)"
+                  Detail="@($"{Display.Bytes(status.RunningModels.Sum(model => model.Size))} total · {Display.Bytes(status.RunningModels.Sum(model => model.SizeVram))} on GPU")" />
+    </FluentGridItem>
+    <FluentGridItem Xs="12" Sm="6" Lg="3">
+        <StatCard Label="Installed" Value="@ModelCount(status.LocalModels.Count)" Detail="@($"{Display.Bytes(status.LocalModels.Sum(model => model.Size))} on disk")" />
+    </FluentGridItem>
+</FluentGrid>
 
 @if (status.Process.IsRunning && !status.Process.IsOwned)
 {
-    <p class="muted small hint">
+    <FluentText As="TextTag.Paragraph" Size="TextSize.Size200" Class="muted" Margin="@Margin.Top3">
         This server was started outside Ollamazing (desktop app, terminal or service). Stop works when the process belongs to your account;
         a server started by Ollamazing also shows its live log below.
-    </p>
+    </FluentText>
 }
 
-<section class="card">
-    <h2>Loaded models</h2>
+<SectionCard Title="Loaded models" Margin="@Margin.Top4">
     @if (unloadFailure is not null)
     {
-        <div class="alert is-error">@unloadFailure</div>
+        <FluentMessageBar Intent="MessageBarIntent.Error">@unloadFailure</FluentMessageBar>
     }
     @if (status.RunningModels.Count == 0)
     {
-        <p class="muted">No model is loaded. Warm one up from <a href="models">Local models</a>.</p>
+        <FluentText Class="muted">No model is loaded. Warm one up from <FluentLink Href="models">Local models</FluentLink>.</FluentText>
     }
     else
     {
-        <table class="table">
-            <thead><tr><th>Model</th><th>Memory</th><th>GPU</th><th>Context</th><th>Unloads</th><th></th></tr></thead>
-            <tbody>
-                @foreach (RunningModel runningModel in status.RunningModels)
-                {
-                    <tr>
-                        <td><code>@runningModel.Name</code></td>
-                        <td>@Display.Bytes(runningModel.Size)</td>
-                        <td>@Display.Bytes(runningModel.SizeVram)</td>
-                        <td>@runningModel.ContextLength</td>
-                        <td>@Display.Relative(runningModel.ExpiresAt.ToLocalTime())</td>
-                        <td class="cell-actions">
-                            <button class="btn is-small" disabled="@unloadingModels.Contains(runningModel.Name)" @onclick="() => UnloadAsync(runningModel.Name)">Unload</button>
-                        </td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+        <FluentDataGrid Items="status.RunningModels.AsQueryable()" GridTemplateColumns="2fr 1fr 1fr 1fr 1fr 120px">
+            <TemplateColumn Title="Model"><FluentText Font="TextFont.Monospace">@context.Name</FluentText></TemplateColumn>
+            <TemplateColumn Title="Memory">@Display.Bytes(context.Size)</TemplateColumn>
+            <TemplateColumn Title="GPU">@Display.Bytes(context.SizeVram)</TemplateColumn>
+            <TemplateColumn Title="Context">@context.ContextLength</TemplateColumn>
+            <TemplateColumn Title="Unloads">@Display.Relative(context.ExpiresAt.ToLocalTime())</TemplateColumn>
+            <TemplateColumn Title="" Align="DataGridCellAlignment.End">
+                <FluentButton Size="ButtonSize.Small" Loading="@unloadingModels.Contains(context.Name)" OnClick="() => UnloadAsync(context.Name)">Unload</FluentButton>
+            </TemplateColumn>
+        </FluentDataGrid>
     }
-</section>
+</SectionCard>
 
-<section class="card">
-    <div class="section-head">
-        <h2>Server log</h2>
-        <span class="spacer"></span>
-        <label class="toggle"><input type="checkbox" @bind="followLog" /> Follow</label>
-        <button class="btn is-small" @onclick="LoadLogAsync">Refresh</button>
-    </div>
-    <pre class="code-block log-view">@(serverLog ?? "Loading…")</pre>
-</section>
+<SectionCard Title="Server log" Margin="@Margin.Top4">
+    <Actions>
+        <FluentCheckbox Label="Follow" @bind-Value="followLog" />
+        <FluentButton Size="ButtonSize.Small" OnClick="LoadLogAsync">Refresh</FluentButton>
+    </Actions>
+    <ChildContent>
+        <FluentText As="TextTag.Pre" Font="TextFont.Monospace" Size="TextSize.Size200" Style="max-height: 28rem; overflow: auto; margin: 0;">@(serverLog ?? "Loading…")</FluentText>
+    </ChildContent>
+</SectionCard>
 
-<section class="card">
-    <h2>Configuration</h2>
-    <dl class="details-grid">
-        <dt>API address</dt><dd><code>@OllamaOptions.Value.BaseUrl</code></dd>
-        <dt>Executable</dt><dd><code>@ServerControlOptions.Value.ExecutablePath serve</code></dd>
-        <dt>Start on launch</dt><dd>@(ServerControlOptions.Value.StartOnLaunch ? "yes" : "no")</dd>
-        <dt>Stop on exit</dt><dd>@(ServerControlOptions.Value.StopOnExit ? "yes, if started by Ollamazing" : "no")</dd>
-        <dt>Environment</dt>
-        <dd>
+<SectionCard Title="Configuration" Margin="@Margin.Top4">
+    <FluentGrid Spacing="2">
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">API address</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9"><FluentText Font="TextFont.Monospace">@OllamaOptions.Value.BaseUrl</FluentText></FluentGridItem>
+
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Executable</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9"><FluentText Font="TextFont.Monospace">@ServerControlOptions.Value.ExecutablePath serve</FluentText></FluentGridItem>
+
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Start on launch</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9"><FluentText>@(ServerControlOptions.Value.StartOnLaunch ? "yes" : "no")</FluentText></FluentGridItem>
+
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Stop on exit</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9"><FluentText>@(ServerControlOptions.Value.StopOnExit ? "yes, if started by Ollamazing" : "no")</FluentText></FluentGridItem>
+
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Environment</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9">
             @if (ServerControlOptions.Value.Environment.Count == 0)
             {
-                <span class="muted">defaults</span>
+                <FluentText Class="muted">defaults</FluentText>
             }
             @foreach ((string variableName, string variableValue) in ServerControlOptions.Value.Environment)
             {
-                <div><code>@variableName=@variableValue</code></div>
+                <FluentText Font="TextFont.Monospace" Block="true">@variableName=@variableValue</FluentText>
             }
-        </dd>
-    </dl>
-    <p class="muted small">Edit the <code>Ollama</code> and <code>ServerControl</code> sections of appsettings.json to change these values.</p>
-</section>
+        </FluentGridItem>
+    </FluentGrid>
+    <FluentText Size="TextSize.Size200" Class="muted">Edit the Ollama and ServerControl sections of appsettings.json to change these values.</FluentText>
+</SectionCard>
 
 @code {
-    /// <summary>Label of the lifecycle action in progress; buttons are disabled while it runs.</summary>
-    private string? runningAction;
+    /// <summary>Lifecycle action in progress; its button shows a progress ring and the others are disabled.</summary>
+    private ServerAction? runningAction;
 
     private ServerActionResult? lastResult;
     private string? serverLog;
@@ -189,13 +165,41 @@ else if (lastResult is not null)
     /// <summary>Runs a lifecycle action off the circuit thread, since stopping waits for the process to exit.</summary>
     private async Task ExecuteAsync(ServerAction action)
     {
-        runningAction = action.ToString();
+        runningAction = action;
         lastResult = await Task.Run(() => ServerController.Execute(action));
         runningAction = null;
 
         // The new state is published right away instead of at the next poll.
         await StatusMonitor.ProbeNowAsync();
         await LoadLogAsync();
+    }
+
+    private Task StartAsync() => ExecuteAsync(ServerAction.Start);
+
+    private Task RestartAsync() => ExecuteAsync(ServerAction.Restart);
+
+    private Task StopAsync() => ExecuteAsync(ServerAction.Stop);
+
+    /// <summary>A count of models with the noun agreeing, as in "1 model" or "3 models".</summary>
+    private static string ModelCount(int count) => count == 1 ? "1 model" : $"{count} models";
+
+    /// <summary>Who runs the server process, the first thing to know before stopping it.</summary>
+    private static string ProcessLabel(ServerProcessState process) => process switch
+    {
+        // A server started here can always be stopped and shows its live log.
+        { IsRunning: true, IsOwned: true } => "Started by Ollamazing",
+        // A server started elsewhere stops only when it belongs to this account.
+        { IsRunning: true } => "Running externally",
+        // No Ollama process exists.
+        _ => "Not running"
+    };
+
+    /// <summary>Process identifier and uptime of the server, when the OS discloses them.</summary>
+    private static string ProcessDetail(ServerProcessState process)
+    {
+        // The start time of processes of other users may be hidden, leaving only the identifier.
+        string identifier = process.ProcessId is { } processId ? $"PID {processId}" : "no process";
+        return process.RunningSince is { } runningSince ? $"{identifier} · up {Display.Duration(DateTimeOffset.Now - runningSince)}" : identifier;
     }
 
     /// <summary>Evicts a model from memory through OllamaSharp.</summary>

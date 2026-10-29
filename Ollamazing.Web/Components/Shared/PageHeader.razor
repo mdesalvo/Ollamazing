@@ -1,0 +1,26 @@
+@* Title, one-line status and actions of a page, laid out the same way on every page. *@
+
+<FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Bottom" Wrap="true" HorizontalGap="16px" Margin="@Margin.Bottom5">
+    <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px" Width="auto">
+        <FluentText As="TextTag.H1" Size="TextSize.Size700" Weight="TextWeight.Semibold">@Title</FluentText>
+        @if (Subtitle is not null)
+        {
+            <FluentText Class="muted">@Subtitle</FluentText>
+        }
+    </FluentStack>
+    <FluentSpacer />
+    @if (Actions is not null)
+    {
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8px" Width="auto" Wrap="true">@Actions</FluentStack>
+    }
+</FluentStack>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    /// <summary>Status line under the title, such as counts or the time of the last refresh.</summary>
+    [Parameter] public RenderFragment? Subtitle { get; set; }
+
+    /// <summary>Buttons acting on the whole page, aligned to the right of the title.</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+}

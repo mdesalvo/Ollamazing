@@ -12,113 +12,122 @@
     AccountStatus? account = AccountMonitor.Current;
 }
 
-<header class="page-header">
-    <div>
-        <h1>ollama.com account</h1>
-        <p class="muted">Cloud models run on ollama.com and are billed to the account linked to this server.</p>
-    </div>
-    @if (account is { IsSignedIn: true })
-    {
-        <div class="header-actions">
-            <button class="btn" disabled="@isLoadingAccountData" @onclick="LoadAccountDataAsync">Refresh</button>
+<PageHeader Title="ollama.com account">
+    <Subtitle>Cloud models run on ollama.com and are billed to the account linked to this server.</Subtitle>
+    <Actions>
+        @if (account is { IsSignedIn: true })
+        {
+            <FluentButton Loading="isLoadingAccountData" OnClick="LoadAccountDataAsync">Refresh</FluentButton>
             @if (isConfirmingSignOut)
             {
-                <button class="btn is-danger" disabled="@isSigningOut" @onclick="SignOutAsync"
-                        title="Revokes the key of this server on ollama.com: cloud models stop until the account is linked again">Confirm sign out</button>
-                <button class="btn is-ghost" disabled="@isSigningOut" @onclick="CancelSignOut">Cancel</button>
+                <FluentButton Appearance="ButtonAppearance.Primary" Loading="isSigningOut" OnClick="SignOutAsync"
+                              Title="Revokes the key of this server on ollama.com: cloud models stop until the account is linked again">Confirm sign out</FluentButton>
+                <FluentButton Appearance="ButtonAppearance.Subtle" Disabled="isSigningOut" OnClick="CancelSignOut">Cancel</FluentButton>
             }
             else
             {
-                <button class="btn is-danger" @onclick="AskSignOut">Sign out</button>
+                <FluentButton Appearance="ButtonAppearance.Outline" OnClick="AskSignOut">Sign out</FluentButton>
             }
-        </div>
-    }
-</header>
+        }
+    </Actions>
+</PageHeader>
 
 @if (actionError is not null)
 {
-    <div class="alert is-error">@actionError</div>
+    <FluentMessageBar Intent="MessageBarIntent.Error" Margin="@Margin.Bottom4">@actionError</FluentMessageBar>
 }
 
 @if (serverStatus.IsInitial)
 {
-    <p class="muted">Checking Ollama…</p>
+    <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8px" VerticalAlignment="VerticalAlignment.Center">
+        <FluentSpinner Size="SpinnerSize.Tiny" />
+        <FluentText Class="muted">Checking Ollama…</FluentText>
+    </FluentStack>
 }
 else if (!serverStatus.IsReachable)
 {
-    <section class="card pairing">
-        <h2>The Ollama server is not running</h2>
-        <p class="muted">
+    <SectionCard Title="The Ollama server is not running">
+        <FluentText Class="muted">
             The account is linked to the key of the local server, so linking it and reading its credits need the server running.
-        </p>
-        <div class="button-row">
-            <button class="btn is-primary" disabled="@(isStartingServer || serverStatus.Process.IsRunning)" @onclick="StartServerAsync">
-                @(isStartingServer || serverStatus.Process.IsRunning ? "Starting…" : "Start server")
-            </button>
-            <a class="btn is-ghost" href="server">Server panel</a>
-        </div>
-    </section>
+        </FluentText>
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8px">
+            <FluentButton Appearance="ButtonAppearance.Primary" Loading="@(isStartingServer || serverStatus.Process.IsRunning)" OnClick="StartServerAsync">Start server</FluentButton>
+            <FluentAnchorButton Href="server" Appearance="ButtonAppearance.Subtle">Server panel</FluentAnchorButton>
+        </FluentStack>
+    </SectionCard>
 }
 else if (account is null)
 {
     @if (AccountMonitor.LastError is { } accountError)
     {
-        <div class="alert is-error">
-            The server could not reach ollama.com: @accountError
-            <button class="link alert-dismiss" @onclick="RetryAccountCheckAsync">Retry</button>
-        </div>
+        <FluentMessageBar Intent="MessageBarIntent.Error">
+            <ChildContent>The server could not reach ollama.com: @accountError</ChildContent>
+            <ActionsTemplate><FluentButton Size="ButtonSize.Small" OnClick="RetryAccountCheckAsync">Retry</FluentButton></ActionsTemplate>
+        </FluentMessageBar>
     }
     else
     {
-        <p class="muted">Checking the account…</p>
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8px" VerticalAlignment="VerticalAlignment.Center">
+            <FluentSpinner Size="SpinnerSize.Tiny" />
+            <FluentText Class="muted">Checking the account…</FluentText>
+        </FluentStack>
     }
 }
 else if (!account.IsSignedIn)
 {
-    <section class="card pairing">
-        <h2>Link your ollama.com account</h2>
-        <p class="muted">
+    <SectionCard Title="Link your ollama.com account">
+        <FluentText Class="muted">
             Linking authorizes the key of this server on ollama.com: cloud models then run under your account,
             drawing on its plan allowance and purchased credits. Your password never passes through Ollamazing.
-        </p>
+        </FluentText>
 
-        <ol class="pairing-steps">
-            <li class="@(isWaitingForApproval ? "is-done" : "is-current")">
-                <span class="pairing-step-title">Open ollama.com</span>
-                <span class="muted">Sign in there if asked. This server is listed as <code>@(account.DeviceName ?? "this computer")</code>.</span>
-            </li>
-            <li class="@(isWaitingForApproval ? "is-current" : "")">
-                <span class="pairing-step-title">Approve the connection</span>
-                <span class="muted">Confirm on the page that opens in a new tab.</span>
-                @if (account.KeyFingerprint is { } keyFingerprint)
-                {
-                    <span class="muted small">Key being linked: <code>@keyFingerprint</code>. It must match the key ollama.com shows for this device.</span>
-                }
-            </li>
-            <li>
-                <span class="pairing-step-title">Back to Ollamazing</span>
-                <span class="muted">The approval is detected automatically; there is nothing to copy or paste.</span>
-            </li>
-        </ol>
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="12px">
+                <FluentBadge Shape="BadgeShape.Circular" Appearance="BadgeAppearance.Filled" Color="BadgeColor.Brand" Content="1" />
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
+                    <FluentText Weight="TextWeight.Semibold">Open ollama.com</FluentText>
+                    <FluentText Class="muted">Sign in there if asked. This server is listed as <FluentText Font="TextFont.Monospace">@(account.DeviceName ?? "this computer")</FluentText>.</FluentText>
+                </FluentStack>
+            </FluentStack>
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="12px">
+                <FluentBadge Shape="BadgeShape.Circular" Appearance="BadgeAppearance.Filled" Color="BadgeColor.Brand" Content="2" />
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
+                    <FluentText Weight="TextWeight.Semibold">Approve the connection</FluentText>
+                    <FluentText Class="muted">Confirm on the page that opens in a new tab.</FluentText>
+                    @if (account.KeyFingerprint is { } keyFingerprint)
+                    {
+                        <FluentText Size="TextSize.Size200" Class="muted">
+                            Key being linked: <FluentText Font="TextFont.Monospace" Size="TextSize.Size200">@keyFingerprint</FluentText>. It must match the key ollama.com shows for this device.
+                        </FluentText>
+                    }
+                </FluentStack>
+            </FluentStack>
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="12px">
+                <FluentBadge Shape="BadgeShape.Circular" Appearance="BadgeAppearance.Filled" Color="BadgeColor.Brand" Content="3" />
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
+                    <FluentText Weight="TextWeight.Semibold">Back to Ollamazing</FluentText>
+                    <FluentText Class="muted">The approval is detected automatically; there is nothing to copy or paste.</FluentText>
+                </FluentStack>
+            </FluentStack>
+        </FluentStack>
 
-        @if (isWaitingForApproval)
-        {
-            <div class="pairing-wait">
-                <span class="spinner" aria-hidden="true"></span>
-                <span>Waiting for approval on ollama.com…</span>
-                <a href="@account.SignInUrl" target="_blank" rel="noopener noreferrer">Open the page again</a>
-                <button class="link" @onclick="CancelPairing">Cancel</button>
-            </div>
-        }
-        else
-        {
-            @if (hasPairingTimedOut)
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="16px" VerticalAlignment="VerticalAlignment.Center" Wrap="true">
+            <FluentAnchorButton Href="@account.SignInUrl" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer" Appearance="ButtonAppearance.Primary">Link account on ollama.com</FluentAnchorButton>
+            @if (isWaitingForApproval)
             {
-                <div class="alert is-warning">No approval arrived within @((int)PairingTimeout.TotalMinutes) minutes. Start again when you are ready.</div>
+                <FluentSpinner Size="SpinnerSize.Tiny" />
+                <FluentText Class="muted">Waiting for the approval on ollama.com…</FluentText>
             }
-            <a class="btn is-primary" href="@account.SignInUrl" target="_blank" rel="noopener noreferrer" @onclick="BeginPairingAsync">Link account on ollama.com</a>
+        </FluentStack>
+
+        @if (hasPairingTimedOut)
+        {
+            <FluentMessageBar Intent="MessageBarIntent.Warning">
+                <ChildContent>No approval arrived within @((int)PairingTimeout.TotalMinutes) minutes, so Ollamazing stopped checking.</ChildContent>
+                <ActionsTemplate><FluentButton Size="ButtonSize.Small" OnClick="WaitForApprovalAgain">Check again</FluentButton></ActionsTemplate>
+            </FluentMessageBar>
         }
-    </section>
+    </SectionCard>
 }
 else
 {
@@ -127,105 +136,82 @@ else
 
     @if (hasJustPaired)
     {
-        <div class="alert is-success">Account linked: cloud models now run as @user.Name.</div>
+        <FluentMessageBar Intent="MessageBarIntent.Success" Margin="@Margin.Bottom4">Account linked: cloud models now run as @user.Name.</FluentMessageBar>
     }
-
-    <section class="card account-profile">
-        @if (IsSecureImage(user.AvatarUrl))
-        {
-            <img class="avatar" src="@user.AvatarUrl" alt="" referrerpolicy="no-referrer" />
-        }
-        <div class="account-identity">
-            <span class="account-name">@DisplayName(user)</span>
-            <span class="muted small">@user.Name · @user.Email</span>
-        </div>
-        <span class="spacer"></span>
-        @if (!string.IsNullOrEmpty(user.Plan))
-        {
-            <span class="chip">@user.Plan plan</span>
-        }
-    </section>
-
     @if (accountDataError is not null)
     {
-        <div class="alert is-error">@accountDataError</div>
+        <FluentMessageBar Intent="MessageBarIntent.Error" Margin="@Margin.Bottom4">@accountDataError</FluentMessageBar>
     }
 
-    <section class="stat-grid">
-        <div class="card stat">
-            <span class="stat-label">Purchased credits</span>
-            <span class="stat-value">@(balance?.Purchased is { } purchased ? Display.Price(purchased.BalanceUsd) : "–")</span>
-            <span class="stat-detail muted">spent once the plan allowance runs out</span>
-        </div>
-        <div class="card stat">
-            <span class="stat-label">Plan allowance</span>
-            <span class="stat-value">
-                @(balance?.Included is { } included ? $"{Display.Price(included.BalanceUsd)} of {Display.Price(included.AllowanceUsd)}" : "–")
-            </span>
-            <span class="stat-detail muted">
-                @(balance?.Included?.Period is { } period ? $"renews {Display.Relative(period.Until)}" : "left in this period")
-            </span>
-        </div>
-        <div class="card stat">
-            <span class="stat-label">Spent · last @RangeLabel(usageRange)</span>
-            <span class="stat-value">@(usageTotals is null ? "–" : Display.Price(usageTotals.UsageUsd))</span>
-            <span class="stat-detail muted">@(usageTotals is null ? "loading…" : $"{usageTotals.RequestCount:N0} cloud requests")</span>
-        </div>
-    </section>
+    <FluentCard Margin="@Margin.Bottom4">
+        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="16px" VerticalAlignment="VerticalAlignment.Center">
+            <FluentAvatar Image="@SecureImage(user.AvatarUrl)" Name="@DisplayName(user)" Size="AvatarSize.Size48" />
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px" Width="auto">
+                <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">@DisplayName(user)</FluentText>
+                <FluentText Size="TextSize.Size200" Class="muted">@user.Name · @user.Email</FluentText>
+            </FluentStack>
+            <FluentSpacer />
+            @if (!string.IsNullOrEmpty(user.Plan))
+            {
+                <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Brand" Content="@($"{user.Plan} plan")" />
+            }
+        </FluentStack>
+    </FluentCard>
 
-    <section class="card">
-        <div class="section-head">
-            <h2>Cloud usage</h2>
-            <span class="spacer"></span>
-            <div class="segmented" role="group" aria-label="Usage range">
+    <FluentGrid Spacing="3">
+        <FluentGridItem Xs="12" Md="4">
+            <StatCard Label="Purchased credits" Value="@(balance?.Purchased is { } purchased ? Display.Price(purchased.BalanceUsd) : "–")"
+                      Detail="spent once the plan allowance runs out" />
+        </FluentGridItem>
+        <FluentGridItem Xs="12" Md="4">
+            <StatCard Label="Plan allowance" Value="@AllowanceSummary"
+                      Detail="@(balance?.Included?.Period is { } period ? $"renews {Display.Relative(period.Until)}" : "left in this period")" />
+        </FluentGridItem>
+        <FluentGridItem Xs="12" Md="4">
+            <StatCard Label="@($"Spent · last {RangeLabel(usageRange)}")" Value="@(usageTotals is null ? "–" : Display.Price(usageTotals.UsageUsd))"
+                      Detail="@(usageTotals is null ? "loading…" : $"{usageTotals.RequestCount:N0} cloud requests")" />
+        </FluentGridItem>
+    </FluentGrid>
+
+    <SectionCard Title="Cloud usage" Margin="@Margin.Top4">
+        <Actions>
+            <FluentRadioGroup TValue="string" Value="@usageRange" ValueChanged="ChangeUsageRangeAsync" Orientation="Orientation.Horizontal"
+                              Disabled="isLoadingAccountData" AriaLabel="Usage range">
                 @foreach (string range in UsageRanges)
                 {
-                    <button class="@(range == usageRange ? "is-selected" : "")" disabled="@isLoadingAccountData" @onclick="() => ChangeUsageRangeAsync(range)">@range</button>
+                    <FluentRadio TValue="string" Value="@range" Label="@range" />
                 }
-            </div>
-        </div>
+            </FluentRadioGroup>
+        </Actions>
+        <ChildContent>
 
         @if (usageTotals is null)
         {
-            <p class="muted">@(isLoadingAccountData ? "Loading usage…" : "Usage is not available.")</p>
+            <FluentText Class="muted">@(isLoadingAccountData ? "Loading usage…" : "Usage is not available.")</FluentText>
         }
         else if (usageTotals.Groups.Count == 0)
         {
-            <p class="muted">No cloud requests in the last @RangeLabel(usageRange).</p>
+            <FluentText Class="muted">No cloud requests in the last @RangeLabel(usageRange).</FluentText>
         }
         else
         {
-            <table class="table usage-table">
-                <thead><tr><th>Model</th><th>Requests</th><th>Input</th><th>Cached input</th><th>Output</th><th>Cost</th></tr></thead>
-                <tbody>
-                    @foreach (ModelUsage modelUsage in usageTotals.Groups.OrderByDescending(group => group.UsageUsd).ThenByDescending(group => group.RequestCount))
-                    {
-                        <tr>
-                            <td><code>@modelUsage.Model</code></td>
-                            <td>@modelUsage.RequestCount.ToString("N0")</td>
-                            <td>@Display.Count(modelUsage.InputTokens)</td>
-                            <td>@Display.Count(modelUsage.CachedInputTokens)</td>
-                            <td>@Display.Count(modelUsage.OutputTokens)</td>
-                            <td>@Display.Price(modelUsage.UsageUsd)</td>
-                        </tr>
-                    }
-                </tbody>
-                @if (usageTotals.Groups.Count > 1)
-                {
-                    <tfoot>
-                        <tr>
-                            <td>Total</td>
-                            <td>@usageTotals.RequestCount.ToString("N0")</td>
-                            <td>@Display.Count(usageTotals.InputTokens)</td>
-                            <td>@Display.Count(usageTotals.CachedInputTokens)</td>
-                            <td>@Display.Count(usageTotals.OutputTokens)</td>
-                            <td>@Display.Price(usageTotals.UsageUsd)</td>
-                        </tr>
-                    </tfoot>
-                }
-            </table>
+            <FluentDataGrid Items="UsageByModel(usageTotals)" GridTemplateColumns="2fr 1fr 1fr 1fr 1fr 1fr">
+                <TemplateColumn Title="Model"><FluentText Font="TextFont.Monospace">@context.Model</FluentText></TemplateColumn>
+                <TemplateColumn Title="Requests" Align="DataGridCellAlignment.End">@context.RequestCount.ToString("N0")</TemplateColumn>
+                <TemplateColumn Title="Input" Align="DataGridCellAlignment.End">@Display.Count(context.InputTokens)</TemplateColumn>
+                <TemplateColumn Title="Cached input" Align="DataGridCellAlignment.End">@Display.Count(context.CachedInputTokens)</TemplateColumn>
+                <TemplateColumn Title="Output" Align="DataGridCellAlignment.End">@Display.Count(context.OutputTokens)</TemplateColumn>
+                <TemplateColumn Title="Cost" Align="DataGridCellAlignment.End">@Display.Price(context.UsageUsd)</TemplateColumn>
+            </FluentDataGrid>
+            @if (usageTotals.Groups.Count > 1)
+            {
+                <FluentText Size="TextSize.Size200" Class="muted">
+                    Total: @usageTotals.RequestCount.ToString("N0") requests · @Display.Count(usageTotals.InputTokens) input · @Display.Count(usageTotals.CachedInputTokens) cached · @Display.Count(usageTotals.OutputTokens) output · @Display.Price(usageTotals.UsageUsd)
+                </FluentText>
+            }
         }
-    </section>
+        </ChildContent>
+    </SectionCard>
 }
 
 @code {
@@ -238,16 +224,15 @@ else
     /// <summary>Ranges accepted by the usage endpoint of ollama.com.</summary>
     private static readonly string[] UsageRanges = ["24h", "7d", "30d"];
 
-    /// <summary>Stops the approval polling when the user cancels or leaves the page.</summary>
+    /// <summary>Stops the approval polling when the account gets linked or the user leaves the page.</summary>
     private CancellationTokenSource? pairingCancellation;
 
+    /// <summary>True while the page checks for the approval, which it does as long as the pairing screen is open.</summary>
     private bool isWaitingForApproval;
+
     private bool hasPairingTimedOut;
 
-    /// <summary>True when the wait was stopped from the Cancel link rather than by the deadline.</summary>
-    private bool isPairingCancelledByUser;
-
-    /// <summary>True after a link approved from this page, to confirm the outcome above the account details.</summary>
+    /// <summary>True after a link approved while this page was waiting, to confirm the outcome above the account details.</summary>
     private bool hasJustPaired;
 
     private bool isStartingServer;
@@ -269,6 +254,11 @@ else
     /// <summary>Account whose credits and usage are on screen, so a different account triggers a fresh load.</summary>
     private string? loadedAccountId;
 
+    /// <summary>Remaining plan allowance over the whole allowance of the period, as in "$0.00 of $0.00".</summary>
+    private string AllowanceSummary => balance?.Included is { } included
+        ? $"{Display.Price(included.BalanceUsd)} of {Display.Price(included.AllowanceUsd)}"
+        : "–";
+
     protected override async Task OnInitializedAsync()
     {
         // Account and server status both decide which screen is shown.
@@ -280,7 +270,7 @@ else
         if (AccountMonitor.Current is null && StatusMonitor.Current.IsReachable)
             await AccountMonitor.RefreshAsync();
 
-        // A linked account shows its credits as soon as the page opens.
+        // A linked account shows its credits, an unlinked one starts waiting for the approval.
         await SyncWithAccountAsync();
     }
 
@@ -295,9 +285,13 @@ else
     /// <summary>Follows account changes made anywhere, such as an approval detected by the polling or a sign-out in another tab.</summary>
     private void OnAccountChanged() => _ = InvokeAsync(SyncWithAccountAsync);
 
-    /// <summary>Loads the credits of a newly linked account and drops those of an account no longer linked.</summary>
+    /// <summary>Loads the credits of a newly linked account, drops those of an account no longer linked and waits for an approval.</summary>
     private async Task SyncWithAccountAsync()
     {
+        // An unlinked server keeps the page checking for the approval, so the link is detected without a click.
+        if (AccountMonitor.Current is { IsSignedIn: false } && !isWaitingForApproval && !hasPairingTimedOut)
+            _ = InvokeAsync(WaitForApprovalAsync);
+
         string? accountId = AccountMonitor.Current?.User?.Id;
 
         // An unchanged account keeps the figures already on screen.
@@ -346,28 +340,34 @@ else
     }
 
     /// <summary>Switches the usage table to another range; the balance does not depend on it.</summary>
-    private async Task ChangeUsageRangeAsync(string range)
+    private async Task ChangeUsageRangeAsync(string? range)
     {
+        // Only the ranges ollama.com accepts are applied.
+        if (range is null || !UsageRanges.Contains(range))
+            return;
         usageRange = range;
         await LoadAccountDataAsync();
     }
 
-    /// <summary>Polls the server while the user approves the link in the ollama.com tab opened by the same click.</summary>
-    private async Task BeginPairingAsync()
+    /// <summary>Usage rows ordered by cost, then by number of requests, so the models that spend the credits come first.</summary>
+    private static IQueryable<ModelUsage> UsageByModel(UsageTotals usageTotals)
+        => usageTotals.Groups.OrderByDescending(group => group.UsageUsd).ThenByDescending(group => group.RequestCount).AsQueryable();
+
+    /// <summary>Polls the server until the account is linked, the deadline passes or the user leaves the page.</summary>
+    private async Task WaitForApprovalAsync()
     {
-        // A previous wait, if any, is replaced by this one.
-        pairingCancellation?.Cancel();
+        // A fresh deadline starts with every wait.
         pairingCancellation?.Dispose();
         pairingCancellation = new CancellationTokenSource(PairingTimeout);
         CancellationToken pairingToken = pairingCancellation.Token;
 
-        // The steps switch to "approve" and any outcome of a previous attempt is cleared.
+        // The waiting indicator appears and any outcome of a previous wait is cleared.
         isWaitingForApproval = true;
         hasPairingTimedOut = false;
-        actionError = null;
+        StateHasChanged();
         try
         {
-            // Each check is published to every circuit, so the approval also updates the sidebar and other tabs.
+            // Each check is published to every circuit, so the approval also updates the header and other tabs.
             using PeriodicTimer pollTimer = new(PairingPollInterval);
             while (await pollTimer.WaitForNextTickAsync(pairingToken))
             {
@@ -383,23 +383,18 @@ else
         }
         catch (OperationCanceledException) when (pairingToken.IsCancellationRequested)
         {
-            // Only the deadline is worth reporting; a cancel by the user is silent.
-            hasPairingTimedOut = !isPairingCancelledByUser;
+            // The deadline is reported with a way to resume; a page being closed has no one left to tell.
+            hasPairingTimedOut = true;
         }
         finally
         {
-            // The pairing screen returns to its initial step, ready for another attempt.
             isWaitingForApproval = false;
-            isPairingCancelledByUser = false;
+            StateHasChanged();
         }
     }
 
-    /// <summary>Stops waiting for the approval; the link can be started again at any time.</summary>
-    private void CancelPairing()
-    {
-        isPairingCancelledByUser = true;
-        pairingCancellation?.Cancel();
-    }
+    /// <summary>Resumes the checks after the deadline, for an approval that took longer than expected.</summary>
+    private Task WaitForApprovalAgain() => WaitForApprovalAsync();
 
     /// <summary>Asks the server for the account again after ollama.com could not be reached.</summary>
     private Task RetryAccountCheckAsync() => AccountMonitor.RefreshAsync();
@@ -446,9 +441,9 @@ else
         }
     }
 
-    /// <summary>Avatars are loaded only over HTTPS, so the profile picture cannot downgrade the page or leak it to plain HTTP.</summary>
-    private static bool IsSecureImage(string? imageUrl)
-        => Uri.TryCreate(imageUrl, UriKind.Absolute, out Uri? imageUri) && imageUri.Scheme == Uri.UriSchemeHttps;
+    /// <summary>Avatar address when served over HTTPS; anything else is dropped, so the profile picture cannot downgrade the page.</summary>
+    private static string? SecureImage(string? imageUrl)
+        => Uri.TryCreate(imageUrl, UriKind.Absolute, out Uri? imageUri) && imageUri.Scheme == Uri.UriSchemeHttps ? imageUrl : null;
 
     /// <summary>Full name from the profile, falling back to the user name when the profile has none.</summary>
     private static string DisplayName(UserResponse user)

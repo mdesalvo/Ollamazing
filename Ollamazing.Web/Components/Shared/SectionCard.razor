@@ -1,0 +1,28 @@
+@* A titled block of a page, so every section of every page carries the same heading, spacing and action placement. *@
+
+<FluentCard Margin="@Margin">
+    @* Contents span the whole card, so forms, tables and logs use the width the section has. *@
+    <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px" HorizontalAlignment="HorizontalAlignment.Stretch">
+        <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="12px" Wrap="true">
+            <FluentText As="TextTag.H2" Size="TextSize.Size500" Weight="TextWeight.Semibold">@Title</FluentText>
+            @if (Actions is not null)
+            {
+                <FluentSpacer />
+                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Width="auto">@Actions</FluentStack>
+            }
+        </FluentStack>
+        @ChildContent
+    </FluentStack>
+</FluentCard>
+
+@code {
+    [Parameter, EditorRequired] public string Title { get; set; } = "";
+
+    /// <summary>Controls acting on the section, aligned to the right of its title.</summary>
+    [Parameter] public RenderFragment? Actions { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    /// <summary>Space around the card, as a Fluent margin class such as <c>Margin.Top4</c>.</summary>
+    [Parameter] public string? Margin { get; set; }
+}

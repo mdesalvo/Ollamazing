@@ -12,170 +12,127 @@
     ServerStatus status = StatusMonitor.Current;
     Dictionary<string, RunningModel> runningByName = status.RunningModels.ToDictionary(model => model.Name, StringComparer.OrdinalIgnoreCase);
     List<Model> visibleModels = status.LocalModels
-        .Where(model => filterText.Length == 0 || model.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase))
+        .Where(model => string.IsNullOrEmpty(filterText) || model.Name.Contains(filterText, StringComparison.OrdinalIgnoreCase))
         .ToList();
 }
 
-<header class="page-header">
-    <div>
-        <h1>Local models</h1>
-        <p class="muted">
-            @status.LocalModels.Count installed · @Display.Bytes(status.LocalModels.Sum(model => model.Size)) on disk · @status.RunningModels.Count loaded in memory
-        </p>
-    </div>
-    <div class="header-actions">
-        <button class="btn" disabled="@(!status.IsReachable)" @onclick="RefreshAsync">Refresh</button>
-        <button class="btn" disabled="@(!status.IsReachable || status.LocalModels.Count == 0)" @onclick="UpdateAll"
-                title="Pull every installed model again; only changed layers are downloaded">Update all</button>
-    </div>
-</header>
+<PageHeader Title="Local models">
+    <Subtitle>@status.LocalModels.Count installed · @Display.Bytes(status.LocalModels.Sum(model => model.Size)) on disk · @status.RunningModels.Count loaded in memory</Subtitle>
+    <Actions>
+        <FluentButton Disabled="@(!status.IsReachable)" OnClick="RefreshAsync">Refresh</FluentButton>
+        <FluentButton Disabled="@(!status.IsReachable || status.LocalModels.Count == 0)" OnClick="UpdateAll"
+                      Title="Pull every installed model again; only changed layers are downloaded">Update all</FluentButton>
+    </Actions>
+</PageHeader>
 
 @if (!status.IsReachable && !status.IsInitial)
 {
-    <div class="alert is-warning">Ollama is offline, so installed models cannot be listed. <a href="server">Open the server panel</a></div>
+    <FluentMessageBar Intent="MessageBarIntent.Warning" Margin="@Margin.Bottom4">
+        Ollama is offline, so installed models cannot be listed. <FluentLink Href="server">Open the server panel</FluentLink>
+    </FluentMessageBar>
 }
 @if (feedback is not null)
 {
-    <div class="alert @(feedbackIsError ? "is-error" : "is-success")">
-        @feedback
-        <button class="link alert-dismiss" @onclick="() => feedback = null">Dismiss</button>
-    </div>
+    <FluentMessageBar Intent="@(feedbackIsError ? MessageBarIntent.Error : MessageBarIntent.Success)" Margin="@Margin.Bottom4">
+        <ChildContent>@feedback</ChildContent>
+        <ActionsTemplate><FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="DismissFeedback">Dismiss</FluentButton></ActionsTemplate>
+    </FluentMessageBar>
 }
 
 @if (status.LocalModels.Count > 0)
 {
-    <input class="input search" type="search" placeholder="Filter installed models…" @bind="filterText" @bind:event="oninput" />
+    <FluentTextInput Appearance="TextInputAppearance.FilledDarker" TextInputType="TextInputType.Search" Placeholder="Filter installed models…" Immediate="true" Width="100%"
+                     @bind-Value="filterText" AriaLabel="Filter installed models" Margin="@Margin.Bottom4" />
 
-    <div class="card table-card">
-        <table class="table models-table">
-            <thead>
-                <tr><th>Model</th><th>Size</th><th>Parameters</th><th>Quantization</th><th>Modified</th><th>Memory</th><th class="cell-actions">Actions</th></tr>
-            </thead>
-            <tbody>
-                @foreach (Model model in visibleModels)
-                {
-                    RunningModel? runningModel = runningByName.GetValueOrDefault(model.Name);
-                    string? busyOperation = busyOperations.GetValueOrDefault(model.Name);
-                    PullJob? updateJob = PullManager.FindActive(model.Name);
-                    bool isCloud = IsCloudModel(model);
-                    <tr class="@(runningModel is not null ? "is-loaded" : "")">
-                        <td>
-                            <button class="link model-link" @onclick="() => ToggleDetailsAsync(model.Name)">@model.Name</button>
-                            @if (isCloud)
+    <FluentCard>
+        <FluentDataGrid Items="visibleModels.AsQueryable()" ItemKey="model => model.Name" MultiLine="true" GridTemplateColumns="2fr 1fr 1fr 1fr 1fr 2fr 280px">
+            <ChildContent>
+                <TemplateColumn Title="Model">
+                    <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
+                        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="6px" VerticalAlignment="VerticalAlignment.Center">
+                            <FluentText Weight="TextWeight.Semibold">@context.Name</FluentText>
+                            @if (IsCloudModel(context))
                             {
-                                <span class="chip is-small is-cloud">cloud</span>
+                                <FluentBadge Size="BadgeSize.Small" Appearance="BadgeAppearance.Tint" Color="BadgeColor.Informative" Content="cloud" />
                             }
-                            @if (model.Details?.Family is { } family)
-                            {
-                                <div class="muted small">@family</div>
-                            }
-                        </td>
-                        <td>@(isCloud ? "–" : Display.Bytes(model.Size))</td>
-                        <td>@model.Details?.ParameterSize</td>
-                        <td>@model.Details?.QuantizationLevel</td>
-                        <td title="@model.ModifiedAt.ToLocalTime().ToString("g")">@Display.Relative(model.ModifiedAt.ToLocalTime())</td>
-                        <td>
-                            @if (runningModel is not null)
-                            {
-                                <span class="chip is-installed">loaded</span>
-                                <div class="muted small">@Display.Bytes(runningModel.Size) · @GpuShare(runningModel) GPU · unloads @Display.Relative(runningModel.ExpiresAt.ToLocalTime())</div>
-                            }
-                            else
-                            {
-                                <span class="muted">idle</span>
-                            }
-                        </td>
-                        <td class="cell-actions">
-                            @if (busyOperation is not null)
-                            {
-                                <span class="muted">@busyOperation…</span>
-                            }
-                            else if (updateJob is not null)
-                            {
-                                <PullProgress Job="updateJob" />
-                            }
-                            else
-                            {
-                                <div class="button-row">
-                                    @if (runningModel is not null)
-                                    {
-                                        <button class="btn is-small" @onclick="() => UnloadAsync(model.Name)">Unload</button>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn is-small" disabled="@isCloud" title="Load into memory for @OllamaOptions.Value.WarmUpKeepAlive"
-                                                @onclick="() => WarmUpAsync(model.Name)">Warm up</button>
-                                    }
-                                    <button class="btn is-small" @onclick="() => PullManager.StartPull(model.Name)">Update</button>
-                                    @if (pendingDeletion == model.Name)
-                                    {
-                                        <button class="btn is-small is-danger" @onclick="() => DeleteAsync(model.Name)">Confirm delete</button>
-                                        <button class="btn is-small is-ghost" @onclick="() => pendingDeletion = null">Cancel</button>
-                                    }
-                                    else
-                                    {
-                                        <button class="btn is-small is-ghost" @onclick="() => pendingDeletion = model.Name">Delete</button>
-                                    }
-                                </div>
-                            }
-                        </td>
-                    </tr>
-                    @if (expandedModel == model.Name)
+                        </FluentStack>
+                        @if (context.Details?.Family is { } family)
+                        {
+                            <FluentText Size="TextSize.Size200" Class="muted">@family</FluentText>
+                        }
+                    </FluentStack>
+                </TemplateColumn>
+                <TemplateColumn Title="Size">@(IsCloudModel(context) ? "–" : Display.Bytes(context.Size))</TemplateColumn>
+                <TemplateColumn Title="Parameters">@context.Details?.ParameterSize</TemplateColumn>
+                <TemplateColumn Title="Quantization">@context.Details?.QuantizationLevel</TemplateColumn>
+                <TemplateColumn Title="Modified">
+                    <FluentText Tooltip="@context.ModifiedAt.ToLocalTime().ToString("g")">@Display.Relative(context.ModifiedAt.ToLocalTime())</FluentText>
+                </TemplateColumn>
+                <TemplateColumn Title="Memory">
+                    @if (runningByName.GetValueOrDefault(context.Name) is { } runningModel)
                     {
-                        <tr class="details-row">
-                            <td colspan="7">
-                                @if (modelDetails is null)
-                                {
-                                    <p class="muted">Loading details…</p>
-                                }
-                                else
-                                {
-                                    <dl class="details-grid">
-                                        <dt>Capabilities</dt>
-                                        <dd>
-                                            @foreach (string capability in modelDetails.Capabilities ?? [])
-                                            {
-                                                <span class="chip">@capability</span>
-                                            }
-                                        </dd>
-                                        <dt>Architecture</dt>
-                                        <dd>@modelDetails.Info?.Architecture</dd>
-                                        <dt>Parameter count</dt>
-                                        <dd>@(modelDetails.Info?.ParameterCount is { } parameterCount ? Display.Count(parameterCount) : "–")</dd>
-                                        <dt>Context length</dt>
-                                        <dd>@(ContextLength(modelDetails) ?? "–")</dd>
-                                        <dt>Digest</dt>
-                                        <dd><code>@model.Digest</code></dd>
-                                        @if (!string.IsNullOrWhiteSpace(modelDetails.Parameters))
-                                        {
-                                            <dt>Parameters</dt>
-                                            <dd><pre class="code-block">@modelDetails.Parameters</pre></dd>
-                                        }
-                                        @if (!string.IsNullOrWhiteSpace(modelDetails.License))
-                                        {
-                                            <dt>License</dt>
-                                            <dd><pre class="code-block is-scroll">@modelDetails.License</pre></dd>
-                                        }
-                                    </dl>
-                                }
-                            </td>
-                        </tr>
+                        <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
+                            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Brand" Content="loaded" />
+                            <FluentText Size="TextSize.Size200" Class="muted">@Display.Bytes(runningModel.Size) · @GpuShare(runningModel) GPU · unloads @Display.Relative(runningModel.ExpiresAt.ToLocalTime())</FluentText>
+                        </FluentStack>
                     }
-                }
-            </tbody>
-        </table>
-    </div>
+                    else
+                    {
+                        <FluentText Class="muted">idle</FluentText>
+                    }
+                </TemplateColumn>
+                <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
+                    @if (busyOperations.GetValueOrDefault(context.Name) is { } busyOperation)
+                    {
+                        <FluentText Class="muted">@busyOperation…</FluentText>
+                    }
+                    else if (PullManager.FindActive(context.Name) is { } updateJob)
+                    {
+                        <PullProgress Job="updateJob" />
+                    }
+                    else
+                    {
+                        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" HorizontalAlignment="HorizontalAlignment.End">
+                            @if (runningByName.ContainsKey(context.Name))
+                            {
+                                <FluentButton Size="ButtonSize.Small" OnClick="() => UnloadAsync(context.Name)">Unload</FluentButton>
+                            }
+                            else
+                            {
+                                <FluentButton Size="ButtonSize.Small" Disabled="@IsCloudModel(context)" Title="@WarmUpTitle" OnClick="() => WarmUpAsync(context.Name)">Warm up</FluentButton>
+                            }
+                            <FluentButton Size="ButtonSize.Small" OnClick="() => PullManager.StartPull(context.Name)">Update</FluentButton>
+                            @if (pendingDeletion == context.Name)
+                            {
+                                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Primary" OnClick="() => DeleteAsync(context.Name)">Confirm delete</FluentButton>
+                                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="CancelDeletion">Cancel</FluentButton>
+                            }
+                            else
+                            {
+                                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => pendingDeletion = context.Name">Delete</FluentButton>
+                            }
+                        </FluentStack>
+                    }
+                </TemplateColumn>
+            </ChildContent>
+            <RowDetails>
+                <LocalModelDetails Model="context" />
+            </RowDetails>
+        </FluentDataGrid>
+    </FluentCard>
 }
 else if (status.IsReachable)
 {
-    <div class="empty-state card">
-        <p>No models installed yet.</p>
-        <a class="btn is-primary" href="">Browse the catalog</a>
-    </div>
+    <FluentCard>
+        <FluentStack Orientation="Orientation.Vertical" HorizontalAlignment="HorizontalAlignment.Center" VerticalGap="12px">
+            <FluentText>No models installed yet.</FluentText>
+            <FluentAnchorButton Href="./" Appearance="ButtonAppearance.Primary">Browse the catalog</FluentAnchorButton>
+        </FluentStack>
+    </FluentCard>
 }
 
 @code {
-    private string filterText = "";
+    private string? filterText = "";
 
     /// <summary>Operation in progress per model, shown in place of its buttons.</summary>
     private readonly Dictionary<string, string> busyOperations = new(StringComparer.OrdinalIgnoreCase);
@@ -183,8 +140,6 @@ else if (status.IsReachable)
     /// <summary>Model awaiting delete confirmation; a second click is required because deleting cannot be undone.</summary>
     private string? pendingDeletion;
 
-    private string? expandedModel;
-    private ShowModelResponse? modelDetails;
     private string? feedback;
     private bool feedbackIsError;
 
@@ -203,11 +158,8 @@ else if (status.IsReachable)
     private static string GpuShare(RunningModel runningModel)
         => runningModel.Size > 0 ? $"{runningModel.SizeVram * 100.0 / runningModel.Size:0}%" : "0%";
 
-    /// <summary>Context length published in the model metadata under the "&lt;architecture&gt;.context_length" key.</summary>
-    private static string? ContextLength(ShowModelResponse details)
-        => details.Info?.ExtraInfo?
-            .FirstOrDefault(entry => entry.Key.EndsWith(".context_length", StringComparison.Ordinal))
-            .Value?.ToString();
+    /// <summary>Tooltip of the warm-up button, stating how long the model stays resident.</summary>
+    private string WarmUpTitle => $"Load into memory for {OllamaOptions.Value.WarmUpKeepAlive}";
 
     private Task RefreshAsync() => StatusMonitor.ProbeNowAsync();
 
@@ -232,11 +184,11 @@ else if (status.IsReachable)
     {
         pendingDeletion = null;
         await RunAsync(modelName, "Deleting", () => OllamaClient.DeleteModelAsync(modelName));
-
-        // Details of a deleted model would describe something no longer installed.
-        if (expandedModel == modelName)
-            expandedModel = null;
     }
+
+    private void CancelDeletion() => pendingDeletion = null;
+
+    private void DismissFeedback() => feedback = null;
 
     /// <summary>Runs an OllamaSharp operation for a model, showing it as busy and reporting the outcome.</summary>
     private async Task RunAsync(string modelName, string operationName, Func<Task> operation)
@@ -259,30 +211,6 @@ else if (status.IsReachable)
 
         // Residency and the installed list changed: every open tab is refreshed at once.
         await StatusMonitor.ProbeNowAsync();
-    }
-
-    /// <summary>Opens or closes the details row, loading the model description through OllamaSharp on opening.</summary>
-    private async Task ToggleDetailsAsync(string modelName)
-    {
-        // A second click on the same model closes its details.
-        if (expandedModel == modelName)
-        {
-            expandedModel = null;
-            return;
-        }
-
-        expandedModel = modelName;
-        modelDetails = null;
-        try
-        {
-            modelDetails = await OllamaClient.ShowModelAsync(modelName);
-        }
-        catch (Exception showError)
-        {
-            // A failed description closes the row and explains why.
-            expandedModel = null;
-            ShowFeedback($"Reading details of {modelName} failed: {showError.Message}", isError: true);
-        }
     }
 
     private void ShowFeedback(string message, bool isError)

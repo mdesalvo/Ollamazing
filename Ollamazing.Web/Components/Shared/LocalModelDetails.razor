@@ -1,0 +1,83 @@
+@inject IOllamaApiClient OllamaClient
+
+@* Description of an installed model, read through OllamaSharp when its row is expanded. *@
+
+@if (loadError is not null)
+{
+    <FluentMessageBar Intent="MessageBarIntent.Error">Reading details of @Model.Name failed: @loadError</FluentMessageBar>
+}
+else if (details is null)
+{
+    <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8px" VerticalAlignment="VerticalAlignment.Center">
+        <FluentSpinner Size="SpinnerSize.Tiny" />
+        <FluentText Class="muted">Loading details…</FluentText>
+    </FluentStack>
+}
+else
+{
+    <FluentGrid Spacing="2">
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Capabilities</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9">
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" Wrap="true">
+                @foreach (string capability in details.Capabilities ?? [])
+                {
+                    <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Subtle" Content="@capability" />
+                }
+            </FluentStack>
+        </FluentGridItem>
+
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Architecture</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9"><FluentText>@details.Info?.Architecture</FluentText></FluentGridItem>
+
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Parameter count</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9"><FluentText>@(details.Info?.ParameterCount is { } parameterCount ? Display.Count(parameterCount) : "–")</FluentText></FluentGridItem>
+
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Context length</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9"><FluentText>@(ContextLength(details) ?? "–")</FluentText></FluentGridItem>
+
+        <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Digest</FluentText></FluentGridItem>
+        <FluentGridItem Xs="12" Sm="9"><FluentText Font="TextFont.Monospace">@Model.Digest</FluentText></FluentGridItem>
+
+        @if (!string.IsNullOrWhiteSpace(details.Parameters))
+        {
+            <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">Parameters</FluentText></FluentGridItem>
+            <FluentGridItem Xs="12" Sm="9"><FluentText As="TextTag.Pre" Font="TextFont.Monospace" Size="TextSize.Size200">@details.Parameters</FluentText></FluentGridItem>
+        }
+        @if (!string.IsNullOrWhiteSpace(details.License))
+        {
+            <FluentGridItem Xs="12" Sm="3"><FluentText Class="muted">License</FluentText></FluentGridItem>
+            <FluentGridItem Xs="12" Sm="9">
+                <FluentText As="TextTag.Pre" Font="TextFont.Monospace" Size="TextSize.Size200" Style="max-height: 14rem; overflow: auto; white-space: pre-wrap;">@details.License</FluentText>
+            </FluentGridItem>
+        }
+    </FluentGrid>
+}
+
+@code {
+    [Parameter, EditorRequired] public Model Model { get; set; } = null!;
+
+    private ShowModelResponse? details;
+
+    /// <summary>Reason the description could not be read, shown in place of the details.</summary>
+    private string? loadError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            // The description is read once, when the row is first expanded.
+            details = await OllamaClient.ShowModelAsync(Model.Name);
+        }
+        catch (Exception showError)
+        {
+            // Ollama's own message, such as a model deleted meanwhile, is the most useful explanation.
+            loadError = showError.Message;
+        }
+    }
+
+    /// <summary>Context length published in the model metadata under the "&lt;architecture&gt;.context_length" key.</summary>
+    private static string? ContextLength(ShowModelResponse modelDetails)
+        => modelDetails.Info?.ExtraInfo?
+            .FirstOrDefault(entry => entry.Key.EndsWith(".context_length", StringComparison.Ordinal))
+            .Value?.ToString();
+}

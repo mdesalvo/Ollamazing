@@ -3,77 +3,108 @@
 @inject ServerStatusMonitor StatusMonitor
 @inject PullManager PullManager
 @inject AccountMonitor AccountMonitor
+@inject IThemeService ThemeService
+@inject NavigationManager Navigation
 
-<div class="shell">
-    <aside class="sidebar">
-        <a class="brand" href="">
-            <span class="brand-mark" aria-hidden="true">🦙</span>
-            <span class="brand-name">Ollamazing</span>
-        </a>
+@* The page waits for the Ollamazing theme, so no control is ever seen in Fluent's default colours. *@
+@if (isThemed)
+{
+    <FluentLayout>
+        @*
+            One brand bar: name on the left, the sections in the middle, server status and the account on the right.
+            Every entry is a plain link, so navigation happens only on a click; the open section reads in white against the sky blue of the others.
+        *@
+        <FluentLayoutItem Area="LayoutArea.Header">
+            <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="16px">
+                <FluentText Size="TextSize.Size500" Weight="TextWeight.Semibold" Nowrap="true">🦙 Ollamazing</FluentText>
+                <FluentSpacer />
 
-        <nav class="nav">
-            <NavLink class="nav-link" href="" Match="NavLinkMatch.All">Catalog</NavLink>
-            <NavLink class="nav-link" href="models">
-                Local models
-                @if (StatusMonitor.Current.IsReachable)
-                {
-                    <span class="nav-count">@StatusMonitor.Current.LocalModels.Count</span>
-                }
-            </NavLink>
-            <NavLink class="nav-link" href="downloads">
-                Downloads
-                @if (PullManager.ActiveCount > 0)
-                {
-                    <span class="nav-count is-accent">@PullManager.ActiveCount</span>
-                }
-            </NavLink>
-            <NavLink class="nav-link" href="server">Server</NavLink>
-            <NavLink class="nav-link" href="account" title="@AccountTitle">
-                Account
-                @if (AccountMonitor.Current is { } account)
-                {
-                    <span class="status-dot @(account.IsSignedIn ? "is-up" : "is-warning")"></span>
-                }
-            </NavLink>
-        </nav>
+                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="4px" Width="auto">
+                    <FluentAnchorButton Href="server" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("server")">Server</FluentAnchorButton>
+                    <FluentAnchorButton Href="./" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("")">Catalog</FluentAnchorButton>
+                    <FluentAnchorButton Href="models" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("models")">
+                        Local models
+                        @if (StatusMonitor.Current.IsReachable)
+                        {
+                            <FluentCounterBadge Count="StatusMonitor.Current.LocalModels.Count" ShowZero="true" Color="BadgeColor.Subtle" />
+                        }
+                    </FluentAnchorButton>
+                    <FluentAnchorButton Href="downloads" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("downloads")">
+                        Downloads
+                        @if (PullManager.ActiveCount > 0)
+                        {
+                            <FluentCounterBadge Count="PullManager.ActiveCount" Color="BadgeColor.Informative" />
+                        }
+                    </FluentAnchorButton>
+                </FluentStack>
 
-        <a class="server-pill" href="server" title="Checked @Display.Relative(StatusMonitor.Current.CheckedAt)">
-            <span class="status-dot @StatusClass"></span>
-            <span>@StatusText</span>
-        </a>
-    </aside>
+                <FluentSpacer />
+                <FluentBadge Appearance="BadgeAppearance.Filled" Color="@StatusColor" Content="@StatusText" />
+                <FluentAnchorButton Href="account" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("account")" Title="@AccountTooltip">
+                    Account
+                    @if (AccountMonitor.Current is { } account)
+                    {
+                        <FluentCounterBadge Dot="true" Color="@(account.IsSignedIn ? BadgeColor.Success : BadgeColor.Warning)" />
+                    }
+                </FluentAnchorButton>
+            </FluentStack>
+        </FluentLayoutItem>
 
-    <main class="content">
-        @Body
-    </main>
-</div>
+        <FluentLayoutItem Area="LayoutArea.Content" Padding="@Padding.All6">
+            @Body
+        </FluentLayoutItem>
+    </FluentLayout>
 
-<div id="blazor-error-ui" data-nosnippet>
-    An unhandled error has occurred.
-    <a href="." class="reload">Reload</a>
-    <span class="dismiss">🗙</span>
-</div>
+    <FluentProviders />
+}
 
 @code {
-    /// <summary>Colour of the status dot: checking, reachable, process up but API silent, or down.</summary>
-    private string StatusClass => StatusMonitor.Current switch
+    /// <summary>Seed of the Fluent colour ramp: a calm light blue, from which Fluent derives every brand shade.</summary>
+    private const string BrandSeed = "#4aa3df";
+
+    /// <summary>Text colour of the entries of the brand bar: the seed lightened to a sky blue that still reads on the bar.</summary>
+    private const string OnBrandText = $"color-mix(in srgb, {BrandSeed} 62%, white)";
+
+    /// <summary>Text colour of the entry of the page on screen: plain white, the brightest tone the bar can carry.</summary>
+    private const string OpenSectionText = "var(--colorNeutralForegroundOnBrand)";
+
+    /// <summary>True once the Ollamazing theme is applied, so the page may be shown.</summary>
+    private bool isThemed;
+
+    /// <summary>Route of the page on screen, relative to the base address and without query string.</summary>
+    private string CurrentRoute => Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
+
+    /// <summary>Label colour of an entry: white for the page on screen, so the bar shows where the user is.</summary>
+    private string SectionColor(string route) => route == CurrentRoute ? OpenSectionText : OnBrandText;
+
+    /// <summary>Colour of the server badge: checking, reachable, process up but API silent, or down.</summary>
+    private BadgeColor StatusColor => StatusMonitor.Current switch
     {
-        { IsInitial: true } => "is-unknown",
-        { IsReachable: true } => "is-up",
-        { Process.IsRunning: true } => "is-warning",
-        _ => "is-down"
+        // The first probe has not answered yet.
+        { IsInitial: true } => BadgeColor.Subtle,
+        // The API answers, so every page works.
+        { IsReachable: true } => BadgeColor.Success,
+        // The process exists but the API is silent, typically while it starts.
+        { Process.IsRunning: true } => BadgeColor.Warning,
+        // Nothing is running.
+        _ => BadgeColor.Danger
     };
 
+    /// <summary>Label of the server badge, with the version once the API answers.</summary>
     private string StatusText => StatusMonitor.Current switch
     {
+        // The first probe has not answered yet.
         { IsInitial: true } => "Checking Ollama…",
+        // The version tells which Ollama the dashboard drives.
         { IsReachable: true } current => $"Ollama {current.Version}",
+        // The process exists but the API is silent.
         { Process.IsRunning: true } => "Ollama starting…",
+        // Nothing is running.
         _ => "Ollama offline"
     };
 
     /// <summary>Tooltip of the account entry: who cloud requests are billed to, or that no account is linked.</summary>
-    private string AccountTitle => AccountMonitor.Current switch
+    private string AccountTooltip => AccountMonitor.Current switch
     {
         // A linked account is named, so a wrong account is noticed at a glance.
         { User.Name: { } userName } => $"Linked to ollama.com as {userName}",
@@ -85,10 +116,29 @@
 
     protected override void OnInitialized()
     {
-        // The sidebar badges follow the server status, the download queue and the linked account.
+        // The header badges follow the server status, the download queue and the linked account.
         StatusMonitor.Changed += Rerender;
         PullManager.Changed += Rerender;
         AccountMonitor.Changed += Rerender;
+
+        // The outlined entry follows the page on screen, including links followed from inside a page.
+        Navigation.LocationChanged += OnLocationChanged;
+    }
+
+    /// <summary>Redraws the header when the page changes, so the outlined entry matches it.</summary>
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs location) => Rerender();
+
+    /// <summary>Grows the Fluent colour ramp from the Ollamazing seed, always in dark mode.</summary>
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // The theme is applied once per circuit.
+        if (!firstRender)
+            return;
+
+        // The seed is not imposed as is: Fluent picks the shades of its ramp, so white text on brand surfaces stays readable.
+        await ThemeService.SetThemeAsync(new ThemeSettings(BrandSeed, 0, 0, ThemeMode.Dark, false));
+        isThemed = true;
+        StateHasChanged();
     }
 
     /// <summary>Marshals a background notification onto the circuit dispatcher.</summary>
@@ -99,5 +149,6 @@
         StatusMonitor.Changed -= Rerender;
         PullManager.Changed -= Rerender;
         AccountMonitor.Changed -= Rerender;
+        Navigation.LocationChanged -= OnLocationChanged;
     }
 }

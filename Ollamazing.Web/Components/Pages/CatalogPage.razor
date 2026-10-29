@@ -6,23 +6,22 @@
 
 <PageTitle>Catalog · Ollamazing</PageTitle>
 
-<header class="page-header">
-    <div>
-        <h1>Model catalog</h1>
-        <p class="muted">@CatalogStatusLine</p>
-    </div>
-    <button class="btn" disabled="@CatalogService.IsRefreshing" @onclick="RefreshCatalog">
-        @(CatalogService.IsRefreshing ? "Refreshing…" : "Refresh catalog")
-    </button>
-</header>
+<PageHeader Title="Model catalog">
+    <Subtitle>@CatalogStatusLine</Subtitle>
+    <Actions>
+        <FluentButton Loading="@CatalogService.IsRefreshing" OnClick="RefreshCatalog">Refresh catalog</FluentButton>
+    </Actions>
+</PageHeader>
 
 @if (CatalogService.LastError is not null)
 {
-    <div class="alert is-error">Catalog refresh failed: @CatalogService.LastError</div>
+    <FluentMessageBar Intent="MessageBarIntent.Error" Margin="@Margin.Bottom4">Catalog refresh failed: @CatalogService.LastError</FluentMessageBar>
 }
 @if (!StatusMonitor.Current.IsReachable && !StatusMonitor.Current.IsInitial)
 {
-    <div class="alert is-warning">Ollama is offline: browsing works, downloads need the server. <a href="server">Open the server panel</a></div>
+    <FluentMessageBar Intent="MessageBarIntent.Warning" Margin="@Margin.Bottom4">
+        Ollama is offline: browsing works, downloads need the server. <FluentLink Href="server">Open the server panel</FluentLink>
+    </FluentMessageBar>
 }
 
 @{
@@ -33,227 +32,217 @@
     int modelsAwaitingSizes = query.CountAwaitingSizes(allModels, facets);
 }
 
-<div class="catalog-layout">
-    <aside class="card facet-panel">
-        <div class="facet-panel-head">
-            <span class="facet-panel-title">Filters</span>
-            @if (query.HasSelections || query.IsSizeRangeActive || query.SearchText.Length > 0)
-            {
-                <button class="link" @onclick="ClearAllFilters">Clear all</button>
-            }
-        </div>
-
-        @foreach (Facet facet in facets)
-        {
-            <fieldset class="facet">
-                <legend class="facet-title">@facet.Title</legend>
-                @foreach (FacetOption option in facet.Options)
+<FluentGrid Spacing="4">
+    <FluentGridItem Xs="12" Md="3" Lg="2">
+        <SectionCard Title="Filters">
+            <Actions>
+                @if (query.HasSelections || query.IsSizeRangeActive || query.SearchText.Length > 0)
                 {
-                    int optionCount = query.CountOption(allModels, facets, facet, option);
-                    bool isSelected = query.IsSelected(facet.Key, option.Key);
-                    <label class="facet-option @(optionCount == 0 && !isSelected ? "is-empty" : "")">
-                        <input type="checkbox" checked="@isSelected" @onchange="() => ToggleOption(facet, option)" />
-                        <span class="facet-option-label">@option.Label</span>
-                        <span class="facet-option-count">@optionCount</span>
-                    </label>
+                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="ClearAllFilters">Clear all</FluentButton>
                 }
-            </fieldset>
-        }
+            </Actions>
+            <ChildContent>
 
-        <fieldset class="facet @(query.IsCloudOnly ? "is-disabled" : "")">
-            <legend class="facet-title">Memory size</legend>
-            <div class="size-range-label">@SizeStepLabel(sizeLowIndex) – @SizeStepLabel(sizeHighIndex)</div>
-            <DualRangeSlider MaxIndex="SizeStepsInGigabytes.Length - 1" LowIndex="sizeLowIndex" HighIndex="sizeHighIndex"
-                             RangeChanged="SetSizeRange" Disabled="query.IsCloudOnly" />
-            <div class="facet-actions">
-                <button class="btn is-small is-ghost" disabled="@query.IsCloudOnly" @onclick="FitToMachineMemory"
-                        title="Limit to models with a tag that fits in the memory of this machine">Fits my RAM (@Display.Bytes(MachineMemoryBytes))</button>
-                @if (query.IsSizeRangeActive)
+            @foreach (Facet facet in facets)
+            {
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
+                    <FluentText Size="TextSize.Size200" Weight="TextWeight.Semibold" Class="muted">@facet.Title</FluentText>
+                    @foreach (FacetOption option in facet.Options)
+                    {
+                        int optionCount = query.CountOption(allModels, facets, facet, option);
+                        bool isSelected = query.IsSelected(facet.Key, option.Key);
+                        <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center">
+                            <FluentCheckbox Label="@option.Label" Value="isSelected" Disabled="@(optionCount == 0 && !isSelected)"
+                                            ValueChanged="(bool _) => ToggleOption(facet, option)" />
+                            <FluentSpacer />
+                            <FluentText Size="TextSize.Size200" Class="muted">@optionCount</FluentText>
+                        </FluentStack>
+                    }
+                </FluentStack>
+            }
+
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
+                <FluentText Size="TextSize.Size200" Weight="TextWeight.Semibold" Class="muted">Memory size</FluentText>
+                <FluentText Weight="TextWeight.Semibold">@SizeStepLabel(sizeLowIndex) – @SizeStepLabel(sizeHighIndex)</FluentText>
+                <DualRangeSlider MaxIndex="SizeStepsInGigabytes.Length - 1" LowIndex="sizeLowIndex" HighIndex="sizeHighIndex"
+                                 RangeChanged="SetSizeRange" Disabled="query.IsCloudOnly" AriaLabel="Memory size" StepLabel="SizeStepLabel" />
+                <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" Wrap="true">
+                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" Disabled="query.IsCloudOnly" OnClick="FitToMachineMemory"
+                                  Title="Limit to models with a tag that fits in the memory of this machine">Fits my RAM (@Display.Bytes(MachineMemoryBytes))</FluentButton>
+                    @if (query.IsSizeRangeActive)
+                    {
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="ResetSizeRange">Any size</FluentButton>
+                    }
+                </FluentStack>
+                @if (query.IsCloudOnly)
                 {
-                    <button class="btn is-small is-ghost" @onclick="ResetSizeRange">Any size</button>
+                    <FluentText Size="TextSize.Size200" Class="muted">Cloud models run on ollama.com and need no local memory.</FluentText>
                 }
-            </div>
-            @if (query.IsCloudOnly)
-            {
-                <p class="facet-hint">Cloud models run on ollama.com and need no local memory.</p>
-            }
-        </fieldset>
-    </aside>
+            </FluentStack>
+            </ChildContent>
+        </SectionCard>
+    </FluentGridItem>
 
-    <section class="catalog-results">
-        <div class="results-toolbar">
-            <input class="input search" type="search" placeholder="Search by name or description…"
-                   value="@query.SearchText" @oninput="SetSearchText" />
-            <select class="input sort" @bind="sortOrder" @bind:after="ResetPaging" aria-label="Sort by">
-                <option value="@SortOrder.Popular">Most popular</option>
-                <option value="@SortOrder.Newest">Recently updated</option>
-                <option value="@SortOrder.Downloads">Most pulled</option>
-                <option value="@SortOrder.Smallest">Smallest size</option>
-                <option value="@SortOrder.Name">Name</option>
-            </select>
-        </div>
+    <FluentGridItem Xs="12" Md="9" Lg="10">
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="12px" VerticalAlignment="VerticalAlignment.Bottom">
+                <FluentTextInput Appearance="TextInputAppearance.FilledDarker" TextInputType="TextInputType.Search" Placeholder="Search by name or description…" Immediate="true" Width="100%"
+                                 Value="@query.SearchText" ValueChanged="SetSearchText" AriaLabel="Search the catalog" />
+                <FluentSelect Appearance="ListAppearance.FilledDarker" TOption="SortOrder" TValue="SortOrder" Items="SortOrders" OptionText="SortLabel" OptionValue="order => order"
+                              Value="sortOrder" ValueChanged="ChangeSortOrder" Width="200px" AriaLabel="Sort by" />
+            </FluentStack>
 
-        <p class="result-count muted">
-            @matchingModels.Count of @allModels.Count models
-            @if (modelsAwaitingSizes > 0)
-            {
-                <span> · @modelsAwaitingSizes more may match once their sizes are loaded</span>
-            }
-        </p>
+            <FluentText Size="TextSize.Size200" Class="muted">
+                @matchingModels.Count of @allModels.Count models@(modelsAwaitingSizes > 0 ? $" · {modelsAwaitingSizes} more may match once their sizes are loaded" : "")
+            </FluentText>
 
-        <div class="model-list">
             @foreach (CatalogModel model in matchingModels.Take(visibleCount))
             {
                 bool isExpanded = expandedModels.Contains(model.Name);
                 int installedCount = InstalledTagCount(model);
-                <article class="card model-card">
-                    <div class="model-head">
-                        <a class="model-name" href="https://ollama.com/library/@model.Name" target="_blank" rel="noopener">@model.Name</a>
-                        <div class="chips">
+                <FluentCard>
+                    <FluentStack Orientation="Orientation.Vertical" VerticalGap="10px">
+                        <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true">
+                            <FluentLink Href="@($"https://ollama.com/library/{model.Name}")" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">
+                                <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">@model.Name</FluentText>
+                            </FluentLink>
                             @if (model.OffersCloud)
                             {
-                                <span class="chip is-cloud">cloud</span>
+                                <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Informative" Content="cloud" />
                             }
                             @if (model.IsCloudFree)
                             {
-                                <span class="chip is-free">free</span>
+                                <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Success" Content="free" />
                             }
                             @if (model.HasPaidOption && model.CloudUsageLevel > 0)
                             {
-                                <span class="usage" title="Cloud usage cost">@(new string('$', model.CloudUsageLevel))<span class="usage-off">@(new string('$', 4 - model.CloudUsageLevel))</span></span>
+                                <FluentText Weight="TextWeight.Bold" Tooltip="Cloud usage cost">@(new string('$', model.CloudUsageLevel))<FluentText Class="faint">@(new string('$', 4 - model.CloudUsageLevel))</FluentText></FluentText>
                             }
                             @foreach (string capability in model.Capabilities)
                             {
-                                <span class="chip">@capability</span>
+                                <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Subtle" Content="@capability" />
                             }
                             @foreach (string parameterSize in model.ParameterSizes)
                             {
-                                <span class="chip is-size">@parameterSize</span>
+                                <FluentBadge Appearance="BadgeAppearance.Outline" Color="BadgeColor.Subtle" Content="@parameterSize" />
                             }
                             @if (installedCount > 0)
                             {
-                                <span class="chip is-installed">installed@(installedCount > 1 ? $" ×{installedCount}" : "")</span>
+                                <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Brand" Content="@InstalledLabel(installedCount)" />
                             }
-                        </div>
-                        <span class="spacer"></span>
-                        @if (FindActivePull(model) is { } activeJob)
-                        {
-                            <PullProgress Job="activeJob" />
-                        }
-                        else
-                        {
-                            <button class="btn is-primary" disabled="@(!StatusMonitor.Current.IsReachable)" @onclick="() => PullDefaultAsync(model)"
-                                    title="@(model.TagsLoadedAt is null ? $"Pull {model.Name}" : $"Pull {model.DefaultPullReference}")">Pull</button>
-                        }
-                    </div>
-
-                    <p class="model-description">@model.Description</p>
-
-                    @if (model.Prices.Count > 0)
-                    {
-                        <div class="model-pricing">
-                            <span class="model-pricing-title" title="@CatalogService.PricingNote">Cloud pricing · per 1M tokens</span>
-                            <table class="table pricing-table">
-                                <thead><tr><th>Rate</th><th>Input</th><th>Cached input</th><th>Output</th></tr></thead>
-                                <tbody>
-                                    @foreach (CatalogPrice price in model.Prices)
-                                    {
-                                        <tr>
-                                            <td title="@(price.IsOffPeak ? CatalogService.PricingNote : null)">@PriceLabel(price)</td>
-                                            <td>@Display.Price(price.Input)</td>
-                                            <td>@Display.Price(price.CachedInput)</td>
-                                            <td>@Display.Price(price.Output)</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-
-                    <div class="model-meta muted">
-                        @if (model.Downloads is { } downloads)
-                        {
-                            <span>@Display.Count(downloads) pulls</span>
-                        }
-                        @if (model.UpdatedOn is { } updatedOn)
-                        {
-                            <span>updated @Display.Relative(updatedOn.ToDateTime(TimeOnly.MinValue))</span>
-                        }
-                        @if (model.ContextWindow is not null)
-                        {
-                            <span>@model.ContextWindow context</span>
-                        }
-                        <span>@SizeSummary(model)</span>
-                        <button class="link" @onclick="() => ToggleExpandedAsync(model)">
-                            @(isExpanded ? "Hide tags" : model.TagsLoadedAt is null ? "Show tags" : $"Show {model.Tags.Count} tags")
-                        </button>
-                    </div>
-
-                    @if (isExpanded)
-                    {
-                        @if (model.TagsLoadedAt is null)
-                        {
-                            <p class="muted">Loading tags…</p>
-                        }
-                        else
-                        {
-                            List<CatalogTag> visibleTags = VisibleTags(model).ToList();
-                            <table class="table tag-table">
-                                <thead><tr><th>Tag</th><th>Size</th><th>Context</th><th>Input</th><th></th></tr></thead>
-                                <tbody>
-                                    @foreach (CatalogTag tag in visibleTags)
-                                    {
-                                        <tr>
-                                            <td>
-                                                <code>@tag.TagName</code>
-                                                @if (tag.IsLatest)
-                                                {
-                                                    <span class="chip is-small">latest</span>
-                                                }
-                                                @if (tag.IsCloud)
-                                                {
-                                                    <span class="chip is-small is-cloud">cloud</span>
-                                                }
-                                            </td>
-                                            <td>@Display.Bytes(tag.SizeBytes)</td>
-                                            <td>@tag.ContextWindow</td>
-                                            <td>@tag.Inputs</td>
-                                            <td class="cell-actions">
-                                                @if (PullManager.FindActive(tag.FullName) is { } tagJob)
-                                                {
-                                                    <PullProgress Job="tagJob" />
-                                                }
-                                                else if (InstalledNames.Contains(tag.FullName))
-                                                {
-                                                    <span class="chip is-installed">installed</span>
-                                                }
-                                                else
-                                                {
-                                                    <button class="btn is-small" disabled="@(!StatusMonitor.Current.IsReachable)" @onclick="() => PullManager.StartPull(tag.FullName)">Pull</button>
-                                                }
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                            @if (model.Tags.Count > visibleTags.Count)
+                            <FluentSpacer />
+                            @if (FindActivePull(model) is { } activeJob)
                             {
-                                <button class="link" @onclick="() => modelsShowingAllTags.Add(model.Name)">Show @(model.Tags.Count - visibleTags.Count) tags outside the current filters</button>
+                                <PullProgress Job="activeJob" />
+                            }
+                            else
+                            {
+                                <FluentButton Appearance="ButtonAppearance.Primary" Disabled="@(!StatusMonitor.Current.IsReachable)" OnClick="() => PullDefaultAsync(model)"
+                                              Title="@(model.TagsLoadedAt is null ? $"Pull {model.Name}" : $"Pull {model.DefaultPullReference}")">Pull</FluentButton>
+                            }
+                        </FluentStack>
+
+                        <FluentText>@model.Description</FluentText>
+
+                        @if (model.Prices.Count > 0)
+                        {
+                            <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
+                                <FluentText Size="TextSize.Size200" Weight="TextWeight.Semibold" Class="muted" Tooltip="@CatalogService.PricingNote">Cloud pricing · per 1M tokens</FluentText>
+                                <FluentDataGrid Items="model.Prices.AsQueryable()" RowSize="DataGridRowSize.Small" GridTemplateColumns="1fr 1fr 1fr 1fr" Style="max-width: 560px;">
+                                    <TemplateColumn Title="Rate">@PriceLabel(context)</TemplateColumn>
+                                    <TemplateColumn Title="Input" Align="DataGridCellAlignment.End">@Display.Price(context.Input)</TemplateColumn>
+                                    <TemplateColumn Title="Cached input" Align="DataGridCellAlignment.End">@Display.Price(context.CachedInput)</TemplateColumn>
+                                    <TemplateColumn Title="Output" Align="DataGridCellAlignment.End">@Display.Price(context.Output)</TemplateColumn>
+                                </FluentDataGrid>
+                            </FluentStack>
+                        }
+
+                        <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="16px" Wrap="true">
+                            @if (model.Downloads is { } downloads)
+                            {
+                                <FluentText Size="TextSize.Size200" Class="muted">@Display.Count(downloads) pulls</FluentText>
+                            }
+                            @if (model.UpdatedOn is { } updatedOn)
+                            {
+                                <FluentText Size="TextSize.Size200" Class="muted">updated @Display.Relative(updatedOn.ToDateTime(TimeOnly.MinValue))</FluentText>
+                            }
+                            @if (model.ContextWindow is not null)
+                            {
+                                <FluentText Size="TextSize.Size200" Class="muted">@model.ContextWindow context</FluentText>
+                            }
+                            <FluentText Size="TextSize.Size200" Class="muted">@SizeSummary(model)</FluentText>
+                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => ToggleExpandedAsync(model)">
+                                @(isExpanded ? "Hide tags" : model.TagsLoadedAt is null ? "Show tags" : $"Show {model.Tags.Count} tags")
+                            </FluentButton>
+                        </FluentStack>
+
+                        @if (isExpanded)
+                        {
+                            @if (model.TagsLoadedAt is null)
+                            {
+                                <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8px" VerticalAlignment="VerticalAlignment.Center">
+                                    <FluentSpinner Size="SpinnerSize.Tiny" />
+                                    <FluentText Class="muted">Loading tags…</FluentText>
+                                </FluentStack>
+                            }
+                            else
+                            {
+                                List<CatalogTag> visibleTags = VisibleTags(model).ToList();
+                                <FluentDataGrid Items="visibleTags.AsQueryable()" RowSize="DataGridRowSize.Small" GridTemplateColumns="2fr 1fr 1fr 1fr 220px">
+                                    <TemplateColumn Title="Tag">
+                                        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="6px" VerticalAlignment="VerticalAlignment.Center">
+                                            <FluentText Font="TextFont.Monospace">@context.TagName</FluentText>
+                                            @if (context.IsLatest)
+                                            {
+                                                <FluentBadge Size="BadgeSize.Small" Appearance="BadgeAppearance.Tint" Color="BadgeColor.Subtle" Content="latest" />
+                                            }
+                                            @if (context.IsCloud)
+                                            {
+                                                <FluentBadge Size="BadgeSize.Small" Appearance="BadgeAppearance.Tint" Color="BadgeColor.Informative" Content="cloud" />
+                                            }
+                                        </FluentStack>
+                                    </TemplateColumn>
+                                    <TemplateColumn Title="Size">@Display.Bytes(context.SizeBytes)</TemplateColumn>
+                                    <TemplateColumn Title="Context">@context.ContextWindow</TemplateColumn>
+                                    <TemplateColumn Title="Input">@context.Inputs</TemplateColumn>
+                                    <TemplateColumn Title="" Align="DataGridCellAlignment.End">
+                                        @if (PullManager.FindActive(context.FullName) is { } tagJob)
+                                        {
+                                            <PullProgress Job="tagJob" />
+                                        }
+                                        else if (InstalledNames.Contains(context.FullName))
+                                        {
+                                            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Brand" Content="installed" />
+                                        }
+                                        else
+                                        {
+                                            <FluentButton Size="ButtonSize.Small" Disabled="@(!StatusMonitor.Current.IsReachable)" OnClick="() => PullManager.StartPull(context.FullName)">Pull</FluentButton>
+                                        }
+                                    </TemplateColumn>
+                                </FluentDataGrid>
+                                @if (model.Tags.Count > visibleTags.Count)
+                                {
+                                    <FluentStack Orientation="Orientation.Horizontal">
+                                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => modelsShowingAllTags.Add(model.Name)">
+                                            Show @(model.Tags.Count - visibleTags.Count) tags outside the current filters
+                                        </FluentButton>
+                                    </FluentStack>
+                                }
                             }
                         }
-                    }
-                </article>
+                    </FluentStack>
+                </FluentCard>
             }
-        </div>
 
-        @if (matchingModels.Count > visibleCount)
-        {
-            <div class="load-more">
-                <button class="btn" @onclick="() => visibleCount += PageSize">Show more (@(matchingModels.Count - visibleCount) left)</button>
-            </div>
-        }
-    </section>
-</div>
+            @if (matchingModels.Count > visibleCount)
+            {
+                <FluentStack HorizontalAlignment="HorizontalAlignment.Center">
+                    <FluentButton OnClick="() => visibleCount += PageSize">Show more (@(matchingModels.Count - visibleCount) left)</FluentButton>
+                </FluentStack>
+            }
+        </FluentStack>
+    </FluentGridItem>
+</FluentGrid>
 
 @code {
     /// <summary>Number of cards rendered per "show more" step, keeping each SignalR render diff small.</summary>
@@ -268,6 +257,9 @@
     private static readonly long MachineMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
 
     private enum SortOrder { Popular, Newest, Downloads, Smallest, Name }
+
+    /// <summary>Orders offered by the sort selector, most useful first.</summary>
+    private static readonly SortOrder[] SortOrders = Enum.GetValues<SortOrder>();
 
     private readonly CatalogQuery query = new();
     private SortOrder sortOrder = SortOrder.Popular;
@@ -371,6 +363,9 @@
         (null, false) => "standard"
     };
 
+    /// <summary>Badge text for installed tags, counting them when more than one is on the server.</summary>
+    private static string InstalledLabel(int installedCount) => installedCount > 1 ? $"installed ×{installedCount}" : "installed";
+
     /// <summary>Number of tags of a model already installed on the server.</summary>
     private int InstalledTagCount(CatalogModel model)
         => StatusMonitor.Current.LocalModels.Count(installed => installed.Name.StartsWith(model.Name + ":", StringComparison.OrdinalIgnoreCase));
@@ -396,11 +391,32 @@
         ResetPaging();
     }
 
-    private void SetSearchText(ChangeEventArgs change)
+    private void SetSearchText(string? searchText)
     {
-        query.SearchText = change.Value?.ToString()?.Trim() ?? "";
+        query.SearchText = searchText?.Trim() ?? "";
         ResetPaging();
     }
+
+    private void ChangeSortOrder(SortOrder order)
+    {
+        sortOrder = order;
+        ResetPaging();
+    }
+
+    /// <summary>Label of a sort order in the selector.</summary>
+    private static string SortLabel(SortOrder order) => order switch
+    {
+        // Popularity is the native order of ollama.com.
+        SortOrder.Popular => "Most popular",
+        // Recent updates first.
+        SortOrder.Newest => "Recently updated",
+        // Download counters, highest first.
+        SortOrder.Downloads => "Most pulled",
+        // Smallest local tag first.
+        SortOrder.Smallest => "Smallest size",
+        // Alphabetical.
+        _ => "Name"
+    };
 
     /// <summary>Applies a slider movement to the query; the last step of the scale removes the upper bound.</summary>
     private void SetSizeRange((int Low, int High) range)

@@ -5,64 +5,77 @@
 
 <PageTitle>Downloads · Ollamazing</PageTitle>
 
-<header class="page-header">
-    <div>
-        <h1>Downloads</h1>
-        <p class="muted">@PullManager.ActiveCount running · downloads continue when you leave this page</p>
-    </div>
-    <button class="btn is-ghost" disabled="@(PullManager.Jobs.All(job => job.IsActive))" @onclick="PullManager.ClearFinished">Clear finished</button>
-</header>
+<PageHeader Title="Downloads">
+    <Subtitle>@PullManager.ActiveCount running · downloads continue when you leave this page</Subtitle>
+    <Actions>
+        <FluentButton Appearance="ButtonAppearance.Subtle" Disabled="@(PullManager.Jobs.All(job => job.IsActive))" OnClick="PullManager.ClearFinished">Clear finished</FluentButton>
+    </Actions>
+</PageHeader>
 
-<form class="card pull-form" @onsubmit="PullTypedReference">
-    <input class="input" placeholder="Model reference, e.g. qwen3:8b or gpt-oss:120b-cloud" @bind="typedReference" @bind:event="oninput" />
-    <button class="btn is-primary" type="submit" disabled="@(!StatusMonitor.Current.IsReachable || string.IsNullOrWhiteSpace(typedReference))">Pull</button>
-</form>
+<SectionCard Title="Pull a model by reference" Margin="@Margin.Bottom4">
+    <form @onsubmit="PullTypedReference">
+        <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px">
+            <FluentTextInput Appearance="TextInputAppearance.FilledDarker" @bind-Value="typedReference" Immediate="true" Width="100%"
+                             Placeholder="e.g. qwen3:8b or gpt-oss:120b-cloud" AriaLabel="Model reference" />
+            <FluentButton Type="ButtonType.Submit" Appearance="ButtonAppearance.Primary"
+                          Disabled="@(!StatusMonitor.Current.IsReachable || string.IsNullOrWhiteSpace(typedReference))">Pull</FluentButton>
+        </FluentStack>
+    </form>
+</SectionCard>
 
 @if (PullManager.Jobs.Count == 0)
 {
-    <div class="empty-state card"><p>No downloads yet. Pick a model from the <a href="">catalog</a>.</p></div>
+    <FluentCard>
+        <FluentStack Orientation="Orientation.Vertical" HorizontalAlignment="HorizontalAlignment.Center" VerticalGap="12px">
+            <FluentText>No downloads yet.</FluentText>
+            <FluentAnchorButton Href="./" Appearance="ButtonAppearance.Primary">Browse the catalog</FluentAnchorButton>
+        </FluentStack>
+    </FluentCard>
 }
 
-<div class="job-list">
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
     @foreach (PullJob job in PullManager.Jobs)
     {
-        <article class="card job-card is-@job.State.ToString().ToLowerInvariant()">
-            <div class="job-head">
-                <code class="job-name">@job.ModelReference</code>
-                <span class="chip is-small">@job.State.ToString().ToLowerInvariant()</span>
-                <span class="spacer"></span>
-                <span class="muted small">started @Display.Relative(job.StartedAt)</span>
+        <FluentCard>
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="8px">
+                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true">
+                    <FluentText Font="TextFont.Monospace" Weight="TextWeight.Semibold">@job.ModelReference</FluentText>
+                    <FluentBadge Appearance="BadgeAppearance.Tint" Color="@StateColor(job.State)" Content="@job.State.ToString().ToLowerInvariant()" />
+                    <FluentSpacer />
+                    <FluentText Size="TextSize.Size200" Class="muted">started @Display.Relative(job.StartedAt)</FluentText>
+                    @if (job.IsActive)
+                    {
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
+                    }
+                    else if (job.State is PullState.Failed or PullState.Cancelled)
+                    {
+                        <FluentButton Size="ButtonSize.Small" Disabled="@(!StatusMonitor.Current.IsReachable)" OnClick="() => PullManager.StartPull(job.ModelReference)">Retry</FluentButton>
+                    }
+                </FluentStack>
+
                 @if (job.IsActive)
                 {
-                    <button class="btn is-small is-ghost" @onclick="() => PullManager.Cancel(job.Id)">Cancel</button>
+                    <PullProgress Job="job" />
+                    @if (job.LastProgress is { Total: > 0 } progress)
+                    {
+                        <FluentText Size="TextSize.Size200" Class="muted">@progress.Status · @Display.Bytes(progress.Completed) of @Display.Bytes(progress.Total)</FluentText>
+                    }
                 }
-                else if (job.State is PullState.Failed or PullState.Cancelled)
+                else if (job.Error is not null)
                 {
-                    <button class="btn is-small" disabled="@(!StatusMonitor.Current.IsReachable)" @onclick="() => PullManager.StartPull(job.ModelReference)">Retry</button>
+                    <FluentMessageBar Intent="MessageBarIntent.Error">@job.Error</FluentMessageBar>
                 }
-            </div>
-            @if (job.IsActive)
-            {
-                <PullProgress Job="job" />
-                @if (job.LastProgress is { Total: > 0 } progress)
+                else if (job.FinishedAt is { } finishedAt)
                 {
-                    <p class="muted small">@progress.Status · @Display.Bytes(progress.Completed) of @Display.Bytes(progress.Total)</p>
+                    <FluentText Size="TextSize.Size200" Class="muted">Finished @Display.Relative(finishedAt) in @Display.Duration(finishedAt - job.StartedAt)</FluentText>
                 }
-            }
-            else if (job.Error is not null)
-            {
-                <p class="job-error">@job.Error</p>
-            }
-            else if (job.FinishedAt is { } finishedAt)
-            {
-                <p class="muted small">Finished @Display.Relative(finishedAt) in @Display.Duration(finishedAt - job.StartedAt)</p>
-            }
-        </article>
+            </FluentStack>
+        </FluentCard>
     }
-</div>
+</FluentStack>
 
 @code {
-    private string typedReference = "";
+    private string? typedReference = "";
 
     protected override void OnInitialized()
     {
@@ -71,13 +84,26 @@
         Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
     }
 
+    /// <summary>Badge colour of a download: brand while running, then the colour of its outcome.</summary>
+    private static BadgeColor StateColor(PullState state) => state switch
+    {
+        // A running pull carries the accent.
+        PullState.Running => BadgeColor.Brand,
+        // A finished pull is good news.
+        PullState.Completed => BadgeColor.Success,
+        // A failed pull needs attention.
+        PullState.Failed => BadgeColor.Danger,
+        // A cancelled pull is neutral.
+        _ => BadgeColor.Subtle
+    };
+
     /// <summary>Starts a pull for a reference typed by hand, for models outside the official catalog (user namespaces, private registries).</summary>
     private void PullTypedReference()
     {
         // Blank input has nothing to pull.
         if (string.IsNullOrWhiteSpace(typedReference))
             return;
-        PullManager.StartPull(typedReference);
+        PullManager.StartPull(typedReference.Trim());
         typedReference = "";
     }
 }
