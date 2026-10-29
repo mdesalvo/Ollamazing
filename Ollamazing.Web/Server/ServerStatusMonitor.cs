@@ -1,9 +1,9 @@
-using Llamazing.Web.Configuration;
+using Ollamazing.Web.Configuration;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OllamaSharp.Models;
 
-namespace Llamazing.Web.Server;
+namespace Ollamazing.Web.Server;
 
 /// <summary>Point-in-time view of the Ollama server: liveness, version, installed and resident models, hosting process.</summary>
 public sealed record ServerStatus

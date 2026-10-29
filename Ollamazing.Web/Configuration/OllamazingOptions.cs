@@ -1,4 +1,4 @@
-namespace Llamazing.Web.Configuration;
+namespace Ollamazing.Web.Configuration;
 
 /// <summary>Connection settings for the Ollama HTTP API driven through OllamaSharp.</summary>
 public sealed class OllamaOptions
@@ -24,13 +24,13 @@ public sealed class ServerControlOptions
     /// <summary>Path of the ollama executable; a bare name is looked up in PATH.</summary>
     public string ExecutablePath { get; set; } = "ollama";
 
-    /// <summary>Extra environment variables for the server started by Llamazing (OLLAMA_MODELS, OLLAMA_KEEP_ALIVE...).</summary>
+    /// <summary>Extra environment variables for the server started by Ollamazing (OLLAMA_MODELS, OLLAMA_KEEP_ALIVE...).</summary>
     public Dictionary<string, string> Environment { get; set; } = [];
 
-    /// <summary>Starts the server when Llamazing boots and finds no Ollama running.</summary>
+    /// <summary>Starts the server when Ollamazing boots and finds no Ollama running.</summary>
     public bool StartOnLaunch { get; set; }
 
-    /// <summary>Stops the server started by Llamazing when Llamazing shuts down; servers started elsewhere are never touched.</summary>
+    /// <summary>Stops the server started by Ollamazing when Ollamazing shuts down; servers started elsewhere are never touched.</summary>
     public bool StopOnExit { get; set; } = true;
 
     /// <summary>Log file of a server started elsewhere; empty selects the default location of the Ollama desktop app.</summary>

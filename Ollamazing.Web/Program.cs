@@ -1,8 +1,8 @@
-using Llamazing.Web.Catalog;
-using Llamazing.Web.Components;
-using Llamazing.Web.Configuration;
-using Llamazing.Web.Ollama;
-using Llamazing.Web.Server;
+using Ollamazing.Web.Catalog;
+using Ollamazing.Web.Components;
+using Ollamazing.Web.Configuration;
+using Ollamazing.Web.Ollama;
+using Ollamazing.Web.Server;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
 
@@ -27,7 +27,7 @@ builder.Services.AddSingleton<IOllamaApiClient>(services =>
 builder.Services.AddHttpClient<OllamaCatalogScraper>(client =>
 {
     client.Timeout = TimeSpan.FromSeconds(30);
-    client.DefaultRequestHeaders.UserAgent.ParseAdd("Llamazing/1.0 (+https://github.com/mdesalvo/llamazing)");
+    client.DefaultRequestHeaders.UserAgent.ParseAdd("Ollamazing/1.0 (+https://github.com/mdesalvo/ollamazing)");
 });
 
 // Shared state lives in singletons, so downloads, catalog and status are the same for every open tab.

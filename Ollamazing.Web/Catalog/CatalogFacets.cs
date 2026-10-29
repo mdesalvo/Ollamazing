@@ -1,7 +1,7 @@
 using System.Globalization;
 using System.Text.RegularExpressions;
 
-namespace Llamazing.Web.Catalog;
+namespace Ollamazing.Web.Catalog;
 
 /// <summary>One selectable value of a facet, with the predicate deciding which models carry it.</summary>
 public sealed record FacetOption(string Key, string Label, Func<CatalogModel, bool> Matches);

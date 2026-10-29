@@ -1,6 +1,6 @@
 using Microsoft.AspNetCore.Components;
 
-namespace Llamazing.Web.Components.Shared;
+namespace Ollamazing.Web.Components.Shared;
 
 /// <summary>Base for components that re-render when a shared singleton (status, catalog, downloads) raises a change event.</summary>
 /// <remarks>Subscriptions are released on dispose, so a closed tab never keeps a singleton pointing to a dead circuit.</remarks>

@@ -1,7 +1,7 @@
 using OllamaSharp;
 using OllamaSharp.Models;
 
-namespace Llamazing.Web.Ollama;
+namespace Ollamazing.Web.Ollama;
 
 /// <summary>Operations missing from OllamaSharp, built on <see cref="IOllamaApiClient"/> in the style of its own extensions.</summary>
 public static class OllamaClientExtensions

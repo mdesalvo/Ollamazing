@@ -1,10 +1,10 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Diagnostics;
-using Llamazing.Web.Configuration;
+using Ollamazing.Web.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace Llamazing.Web.Server;
+namespace Ollamazing.Web.Server;
 
 /// <summary>Lifecycle actions available from the control panel.</summary>
 public enum ServerAction
@@ -19,7 +19,7 @@ public sealed record ServerActionResult(ServerAction Action, bool Succeeded, str
 
 /// <summary>Server process found in the OS process table.</summary>
 /// <param name="IsRunning">True when an Ollama process exists, regardless of whether its HTTP API answers yet.</param>
-/// <param name="IsOwned">True when the process was started by Llamazing, which then also holds its log.</param>
+/// <param name="IsOwned">True when the process was started by Ollamazing, which then also holds its log.</param>
 /// <param name="RunningSince">When the process started; null when the OS hides it (processes of other users).</param>
 public sealed record ServerProcessState(bool IsRunning, bool IsOwned, int? ProcessId, DateTimeOffset? RunningSince)
 {
@@ -85,7 +85,7 @@ public sealed class OllamaServerController : IDisposable
         }
     }
 
-    /// <summary>Finds the running server, preferring the one started by Llamazing.</summary>
+    /// <summary>Finds the running server, preferring the one started by Ollamazing.</summary>
     public ServerProcessState GetProcessState()
     {
         lock (processLock)
@@ -115,7 +115,7 @@ public sealed class OllamaServerController : IDisposable
     /// <summary>Returns the most recent server log lines, from the owned process output or the server log file.</summary>
     public async Task<string> GetLogsAsync(CancellationToken cancellationToken = default)
     {
-        // A server started by Llamazing has its output buffered in memory.
+        // A server started by Ollamazing has its output buffered in memory.
         lock (processLock)
         {
             if (ownedProcess is not null && !processLog.IsEmpty)
@@ -183,7 +183,7 @@ public sealed class OllamaServerController : IDisposable
 
         return failures.Count == 0
             ? null
-            : $"Could not stop every Ollama process ({string.Join("; ", failures)}). The server runs under another account: stop it there, then let Llamazing start its own.";
+            : $"Could not stop every Ollama process ({string.Join("; ", failures)}). The server runs under another account: stop it there, then let Ollamazing start its own.";
     }
 
     /// <summary>Launches <c>ollama serve</c> bound to the configured address, buffering its output for the log viewer.</summary>
@@ -240,7 +240,7 @@ public sealed class OllamaServerController : IDisposable
 
         // A missing file is explained, so the user knows which setting to fill in.
         if (!File.Exists(logFile))
-            return $"No server log available: {logFile} does not exist.\nStart the server from Llamazing to capture its output, or set ServerControl:LogFile.";
+            return $"No server log available: {logFile} does not exist.\nStart the server from Ollamazing to capture its output, or set ServerControl:LogFile.";
 
         // The server keeps the file open for writing, so it is read with shared access.
         await using FileStream logStream = new(logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
@@ -264,7 +264,7 @@ public sealed class OllamaServerController : IDisposable
     }
 }
 
-/// <summary>Starts the Ollama server when Llamazing boots, if configured and no server is running yet.</summary>
+/// <summary>Starts the Ollama server when Ollamazing boots, if configured and no server is running yet.</summary>
 public sealed class ServerAutoStartService(OllamaServerController serverController, IOptions<ServerControlOptions> options, ILogger<ServerAutoStartService> logger) : IHostedService
 {
     public Task StartAsync(CancellationToken cancellationToken)

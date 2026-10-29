@@ -6,7 +6,7 @@
 @inject IOptions<OllamaOptions> OllamaOptions
 @inject IOptions<ServerControlOptions> ServerControlOptions
 
-<PageTitle>Server · Llamazing</PageTitle>
+<PageTitle>Server · Ollamazing</PageTitle>
 
 @{
     ServerStatus status = StatusMonitor.Current;
@@ -47,7 +47,7 @@ else if (lastResult is not null)
     </div>
     <div class="card stat">
         <span class="stat-label">Process</span>
-        <span class="stat-value">@(status.Process.IsRunning ? status.Process.IsOwned ? "Started by Llamazing" : "Running externally" : "Not running")</span>
+        <span class="stat-value">@(status.Process.IsRunning ? status.Process.IsOwned ? "Started by Ollamazing" : "Running externally" : "Not running")</span>
         <span class="stat-detail muted">
             @if (status.Process.ProcessId is { } processId)
             {
@@ -74,8 +74,8 @@ else if (lastResult is not null)
 @if (status.Process.IsRunning && !status.Process.IsOwned)
 {
     <p class="muted small hint">
-        This server was started outside Llamazing (desktop app, terminal or service). Stop works when the process belongs to your account;
-        a server started by Llamazing also shows its live log below.
+        This server was started outside Ollamazing (desktop app, terminal or service). Stop works when the process belongs to your account;
+        a server started by Ollamazing also shows its live log below.
     </p>
 }
 
@@ -128,7 +128,7 @@ else if (lastResult is not null)
         <dt>API address</dt><dd><code>@OllamaOptions.Value.BaseUrl</code></dd>
         <dt>Executable</dt><dd><code>@ServerControlOptions.Value.ExecutablePath serve</code></dd>
         <dt>Start on launch</dt><dd>@(ServerControlOptions.Value.StartOnLaunch ? "yes" : "no")</dd>
-        <dt>Stop on exit</dt><dd>@(ServerControlOptions.Value.StopOnExit ? "yes, if started by Llamazing" : "no")</dd>
+        <dt>Stop on exit</dt><dd>@(ServerControlOptions.Value.StopOnExit ? "yes, if started by Ollamazing" : "no")</dd>
         <dt>Environment</dt>
         <dd>
             @if (ServerControlOptions.Value.Environment.Count == 0)

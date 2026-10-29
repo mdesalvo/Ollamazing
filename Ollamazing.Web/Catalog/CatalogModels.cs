@@ -1,4 +1,4 @@
-namespace Llamazing.Web.Catalog;
+namespace Ollamazing.Web.Catalog;
 
 /// <summary>A model family listed in the ollama.com catalog, as read from the search page and its tags page.</summary>
 public sealed record CatalogModel

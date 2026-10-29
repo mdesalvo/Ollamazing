@@ -1,6 +1,6 @@
 using System.Globalization;
 
-namespace Llamazing.Web.Components.Shared;
+namespace Ollamazing.Web.Components.Shared;
 
 /// <summary>Formatting rules shared by every page, so sizes and times read the same everywhere.</summary>
 public static class Display

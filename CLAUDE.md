@@ -2,7 +2,7 @@
 
 Guida operativa per Claude Code su questo repository.
 
-## Cos'è Llamazing
+## Cos'è Ollamazing
 
 Dashboard Blazor Server (interattività server via SignalR, .NET 10) che fa da frontend a un'installazione Ollama:
 
@@ -14,8 +14,8 @@ Dashboard Blazor Server (interattività server via SignalR, .NET 10) che fa da f
 ## Struttura
 
 ```
-Llamazing.slnx              solution (formato slnx)
-Llamazing.Web/              unico progetto, niente cartella src/
+Ollamazing.slnx              solution (formato slnx)
+Ollamazing.Web/              unico progetto, niente cartella src/
   Configuration/            opzioni (sezioni Ollama, ServerControl, Catalog di appsettings.json)
   Catalog/                  scraping HTML di ollama.com (AngleSharp), cache su disco, motore a faccette
   Ollama/                   PullManager (download in background) + extension method su IOllamaApiClient
@@ -26,8 +26,8 @@ Llamazing.Web/              unico progetto, niente cartella src/
 ## Comandi
 
 ```bash
-dotnet build Llamazing.slnx
-dotnet run --project Llamazing.Web          # http://localhost:5222
+dotnet build Ollamazing.slnx
+dotnet run --project Ollamazing.Web          # http://localhost:5222
 ```
 
 ## Principi (decisi con l'utente)
@@ -50,7 +50,7 @@ dotnet run --project Llamazing.Web          # http://localhost:5222
   - `/search?page=N` richiede l'header `HX-Request: true`, altrimenti restituisce sempre la prima pagina;
   - le dimensioni dei tag sono solo in `/library/<nome>/tags`;
   - se il markup cambia, si corregge solo `Catalog/OllamaCatalogScraper.cs`;
-  - le richieste sono limitate da `Catalog:MaxConcurrentRequests` e la cache sta in `Llamazing.Web/data/` (non committare).
+  - le richieste sono limitate da `Catalog:MaxConcurrentRequests` e la cache sta in `Ollamazing.Web/data/` (non committare).
 - **Stato condiviso:** `CatalogService`, `PullManager` e `ServerStatusMonitor` sono singleton che notificano con eventi.
   - I componenti ereditano `LiveComponentBase` e si iscrivono con `Watch(...)`.
   - `ServerStatusMonitor.Current` contiene modelli installati e residenti: è l'unica fonte per le pagine. Dopo un'operazione si chiama `ProbeNowAsync()`.

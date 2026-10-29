@@ -1,8 +1,8 @@
 using System.Text.Json;
-using Llamazing.Web.Configuration;
+using Ollamazing.Web.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace Llamazing.Web.Catalog;
+namespace Ollamazing.Web.Catalog;
 
 /// <summary>Holds the ollama.com catalog for every connected circuit, refreshing it and loading tag sizes in background.</summary>
 /// <remarks>

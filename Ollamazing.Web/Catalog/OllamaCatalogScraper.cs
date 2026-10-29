@@ -2,10 +2,10 @@ using System.Globalization;
 using System.Text.RegularExpressions;
 using AngleSharp.Dom;
 using AngleSharp.Html.Parser;
-using Llamazing.Web.Configuration;
+using Ollamazing.Web.Configuration;
 using Microsoft.Extensions.Options;
 
-namespace Llamazing.Web.Catalog;
+namespace Ollamazing.Web.Catalog;
 
 /// <summary>Reads the public model catalog from the ollama.com HTML pages, which expose no JSON API.</summary>
 /// <remarks>Every markup assumption lives in this class, so a redesign of ollama.com is fixed here only.</remarks>
