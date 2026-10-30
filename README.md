@@ -30,7 +30,7 @@ The page shows the SHA256 fingerprint of the key being linked, in the format of 
 
 - .NET 10 SDK
 - Ollama installed and reachable (default `http://localhost:11434`)
-- Works on Windows, macOS and Linux
+- **Works on Windows, macOS and Linux**
 
 ## Run
 
