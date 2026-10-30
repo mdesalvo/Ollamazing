@@ -45,8 +45,8 @@
 
             @foreach (Facet facet in facets)
             {
-                <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
-                    <FluentText Size="TextSize.Size200" Weight="TextWeight.Semibold" Class="muted">@facet.Title</FluentText>
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
+                    <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">@facet.Title</FluentText>
                     @foreach (FacetOption option in facet.Options)
                     {
                         int optionCount = query.CountOption(allModels, facets, facet, option);
@@ -59,10 +59,11 @@
                         </FluentStack>
                     }
                 </FluentStack>
+                <FluentDivider />
             }
 
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
-                <FluentText Size="TextSize.Size200" Weight="TextWeight.Semibold" Class="muted">Memory size</FluentText>
+                <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">Memory size</FluentText>
                 <FluentText Weight="TextWeight.Semibold">@SizeStepLabel(sizeLowIndex) – @SizeStepLabel(sizeHighIndex)</FluentText>
                 <DualRangeSlider MaxIndex="SizeStepsInGigabytes.Length - 1" LowIndex="sizeLowIndex" HighIndex="sizeHighIndex"
                                  RangeChanged="SetSizeRange" Disabled="query.IsCloudOnly" AriaLabel="Memory size" StepLabel="SizeStepLabel" />
