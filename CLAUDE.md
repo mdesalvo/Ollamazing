@@ -40,4 +40,4 @@ dotnet run --project Ollamazing.Web          # http://localhost:5222
 - **Stato condiviso:** `CatalogService`, `PullManager`, `ServerStatusMonitor`, `AccountMonitor` sono singleton con eventi; i componenti ereditano `LiveComponentBase` e usano `Watch(...)`.
 - **Razor:** niente stringhe tra doppi apici dentro `@onclick="..."`.
 - **Lingue:** UI e commenti in inglese, commenti secondo la skill `code-commentation`.
-- **Shell:** `rm` è un alias interattivo, si usa `/bin/rm -f`.
+- **Shell:** `rm`, `cp` e `mv` sono alias interattivi, si usano `/bin/rm -f`, `/bin/cp -f`, `/bin/mv -f`.
