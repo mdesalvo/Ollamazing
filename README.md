@@ -4,7 +4,7 @@
 
 ## Features
 
-- **Catalog**: every model published on ollama.com, browsed by facets. Facets combine with AND, while options inside the same facet combine with OR. Every option shows how many models it would match.
+- **Catalog**: every model published on ollama.com, browsed by facets.
   - **Class**: local weights, cloud, or both.
   - **Pricing**: free (local weights or free cloud tier) or paid (cloud usage).
   - **Capabilities**: tools, vision, thinking, embedding, audio…
