@@ -1,5 +1,4 @@
 @inherits LayoutComponentBase
-@using System.Reflection
 @implements IDisposable
 @inject ServerStatusMonitor StatusMonitor
 @inject PullManager PullManager
@@ -12,19 +11,15 @@
 {
     <FluentLayout>
         @*
-            One brand bar: name on the left, the sections in the middle, server status and the account on the right.
+            One brand bar: the logo on the left, the sections in the middle, the server and the account on the right.
             Every entry is a plain link, so navigation happens only on a click; the open section reads in white against the sky blue of the others.
         *@
         <FluentLayoutItem Area="LayoutArea.Header">
             <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="16px">
-                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="6px" Width="auto">
-                    <FluentImage Source="Images/ollamazing_header.png" AlternateText="Ollamazing" Height="36px" />
-                    <FluentText Size="TextSize.Size200" Nowrap="true">v@(AppVersion)</FluentText>
-                </FluentStack>
+                <FluentImage Source="Images/ollamazing_header.png" AlternateText="Ollamazing" Height="36px" Style="display: flex" />
                 <FluentSpacer />
 
                 <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="4px" Width="auto">
-                    <FluentAnchorButton Href="server" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("server")">Server</FluentAnchorButton>
                     <FluentAnchorButton Href="./" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("")">Catalog</FluentAnchorButton>
                     <FluentAnchorButton Href="models" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("models")">
                         Local models
@@ -43,7 +38,13 @@
                 </FluentStack>
 
                 <FluentSpacer />
-                <FluentBadge Appearance="BadgeAppearance.Filled" Color="@StatusColor" Content="@StatusText" />
+                <FluentAnchorButton Href="server" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("server")" Title="@ServerTooltip">
+                    Server
+                    @if (!StatusMonitor.Current.IsInitial)
+                    {
+                        <FluentCounterBadge Dot="true" Color="@(StatusMonitor.Current.IsReachable ? BadgeColor.Success : BadgeColor.Danger)" />
+                    }
+                </FluentAnchorButton>
                 <FluentAnchorButton Href="account" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("account")" Title="@AccountTooltip">
                     Account
                     @if (AccountMonitor.Current is { } account)
@@ -72,10 +73,6 @@
     /// <summary>Text colour of the entry of the page on screen: plain white, the brightest tone the bar can carry.</summary>
     private const string OpenSectionText = "var(--colorNeutralForegroundOnBrand)";
 
-    /// <summary>Release of this build, from the version stated once in Directory.Build.props.</summary>
-    private static readonly string AppVersion = typeof(MainLayout).Assembly
-        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?";
-
     /// <summary>True once the Ollamazing theme is applied, so the page may be shown.</summary>
     private bool isThemed;
 
@@ -85,30 +82,15 @@
     /// <summary>Label colour of an entry: white for the page on screen, so the bar shows where the user is.</summary>
     private string SectionColor(string route) => route == CurrentRoute ? OpenSectionText : OnBrandText;
 
-    /// <summary>Colour of the server badge: checking, reachable, process up but API silent, or down.</summary>
-    private BadgeColor StatusColor => StatusMonitor.Current switch
-    {
-        // The first probe has not answered yet.
-        { IsInitial: true } => BadgeColor.Subtle,
-        // The API answers, so every page works.
-        { IsReachable: true } => BadgeColor.Success,
-        // The process exists but the API is silent, typically while it starts.
-        { Process.IsRunning: true } => BadgeColor.Warning,
-        // Nothing is running.
-        _ => BadgeColor.Danger
-    };
-
-    /// <summary>Label of the server badge, with the version once the API answers.</summary>
-    private string StatusText => StatusMonitor.Current switch
+    /// <summary>Tooltip of the server entry: which Ollama the dashboard drives, or that none answers.</summary>
+    private string ServerTooltip => StatusMonitor.Current switch
     {
         // The first probe has not answered yet.
         { IsInitial: true } => "Checking Ollama…",
         // The version tells which Ollama the dashboard drives.
-        { IsReachable: true } current => $"Ollama {current.Version}",
-        // The process exists but the API is silent.
-        { Process.IsRunning: true } => "Ollama starting…",
-        // Nothing is running.
-        _ => "Ollama offline"
+        { IsReachable: true } status => $"Ollama {status.Version} is reachable",
+        // Nothing answers, whether the process is down or still starting.
+        _ => "Ollama is offline"
     };
 
     /// <summary>Tooltip of the account entry: who cloud requests are billed to, or that no account is linked.</summary>

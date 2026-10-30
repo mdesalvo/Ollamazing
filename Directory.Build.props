@@ -12,8 +12,6 @@
     <VersionPrefix>1.0.0</VersionPrefix>
     <AssemblyVersion>$(VersionPrefix)</AssemblyVersion>
     <FileVersion>$(VersionPrefix)</FileVersion>
-    <!-- The informational version is shown in the UI, so it stays the bare release name without the commit hash. -->
-    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
 
     <!-- Package Metadata -->
     <Authors>Marco De Salvo</Authors>
