@@ -1,0 +1,44 @@
+@* Tells why a page needs the Ollama server and offers to start it, the same way on every page. *@
+@inject OllamaServerController ServerController
+@inject ServerStatusMonitor StatusMonitor
+
+<SectionCard Title="The Ollama server is not running" Margin="@Margin">
+    <FluentText Class="muted">@Reason</FluentText>
+    @if (startFailure is not null)
+    {
+        <FluentMessageBar Intent="MessageBarIntent.Error">@startFailure</FluentMessageBar>
+    }
+    <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8px">
+        <FluentButton Appearance="ButtonAppearance.Primary" Loading="@(isStarting || StatusMonitor.Current.Process.IsRunning)" OnClick="StartAsync">Start server</FluentButton>
+        <FluentAnchorButton Href="server" Appearance="ButtonAppearance.Outline">Server panel</FluentAnchorButton>
+    </FluentStack>
+</SectionCard>
+
+@code {
+    /// <summary>Why this page needs the server, in one plain sentence.</summary>
+    [Parameter, EditorRequired] public string Reason { get; set; } = "";
+
+    /// <summary>Space around the card, as a Fluent margin class such as <c>Margin.Top4</c>.</summary>
+    [Parameter] public string? Margin { get; set; }
+
+    private bool isStarting;
+
+    /// <summary>Failure message of the last start attempt, shown inside the card.</summary>
+    private string? startFailure;
+
+    /// <summary>Starts the server from the card, since the page cannot work without it.</summary>
+    private async Task StartAsync()
+    {
+        isStarting = true;
+        startFailure = null;
+
+        // Starting waits on the process, so it runs off the circuit thread.
+        ServerActionResult result = await Task.Run(() => ServerController.Execute(ServerAction.Start));
+
+        // A failed start explains itself; a successful one is followed by the page coming alive once the API answers.
+        if (!result.Succeeded)
+            startFailure = result.Message;
+        await StatusMonitor.ProbeNowAsync();
+        isStarting = false;
+    }
+}

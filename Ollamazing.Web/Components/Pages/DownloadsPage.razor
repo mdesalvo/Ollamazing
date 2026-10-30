@@ -6,12 +6,21 @@
 <PageTitle>Downloads · Ollamazing</PageTitle>
 
 <PageHeader Title="Downloads">
-    <Subtitle>@PullManager.ActiveCount running · downloads continue when you leave this page</Subtitle>
+    <Subtitle>@(PullManager.ActiveCount > 0 ? $"{PullManager.ActiveCount} running · downloads continue when you leave this page" : "Downloads continue when you leave this page")</Subtitle>
     <Actions>
-        <FluentButton Appearance="ButtonAppearance.Subtle" Disabled="@(PullManager.Jobs.All(job => job.IsActive))" OnClick="PullManager.ClearFinished">Clear finished</FluentButton>
+        @if (PullManager.Jobs.Any(job => !job.IsActive))
+        {
+            <FluentButton Appearance="ButtonAppearance.Outline" OnClick="PullManager.ClearFinished">Clear finished</FluentButton>
+        }
     </Actions>
 </PageHeader>
 
+@if (!StatusMonitor.Current.IsReachable && !StatusMonitor.Current.IsInitial)
+{
+    <ServerOfflineCard Reason="Models are downloaded by the Ollama server, so it has to be running to pull one." Margin="@Margin.Bottom4" />
+}
+else
+{
 <SectionCard Title="Pull a model by reference" Margin="@Margin.Bottom4">
     <form @onsubmit="PullTypedReference">
         <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px">
@@ -22,6 +31,7 @@
         </FluentStack>
     </form>
 </SectionCard>
+}
 
 @if (PullManager.Jobs.Count == 0)
 {
@@ -39,17 +49,17 @@
         <FluentCard>
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="8px">
                 <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true">
-                    <FluentText Font="TextFont.Monospace" Weight="TextWeight.Semibold">@job.ModelReference</FluentText>
+                    <FluentText Weight="TextWeight.Semibold">@job.ModelReference</FluentText>
                     <FluentBadge Appearance="BadgeAppearance.Tint" Color="@StateColor(job.State)" Content="@job.State.ToString().ToLowerInvariant()" />
                     <FluentSpacer />
                     <FluentText Size="TextSize.Size200" Class="muted">started @Display.Relative(job.StartedAt)</FluentText>
                     @if (job.IsActive)
                     {
-                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
                     }
                     else if (job.State is PullState.Failed or PullState.Cancelled)
                     {
-                        <FluentButton Size="ButtonSize.Small" Disabled="@(!StatusMonitor.Current.IsReachable)" OnClick="() => PullManager.StartPull(job.ModelReference)">Retry</FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Disabled="@(!StatusMonitor.Current.IsReachable)" OnClick="() => PullManager.StartPull(job.ModelReference)">Retry</FluentButton>
                     }
                 </FluentStack>
 

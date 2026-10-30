@@ -55,7 +55,7 @@
         <StatCard Label="In memory" Value="@ModelCount(status.RunningModels.Count)" Detail="@MemoryTotals(status)" />
     </FluentGridItem>
     <FluentGridItem Xs="12" Sm="6">
-        <StatCard Label="Installed" Value="@ModelCount(status.LocalModels.Count)" Detail="@($"{Display.Bytes(status.LocalModels.Sum(model => model.Size))} on disk")" />
+        <StatCard Label="Installed" Value="@ModelCount(status.LocalModels.Count)" Detail="@($"{Display.Bytes(status.LocalModels.Where(model => !model.IsCloud()).Sum(model => model.Size))} on disk")" />
     </FluentGridItem>
 </FluentGrid>
 
@@ -66,7 +66,7 @@
     }
     @if (status.RunningModels.Count == 0)
     {
-        <FluentText Class="muted">No model is loaded. Warm one up from <FluentLink Href="models">Local models</FluentLink>.</FluentText>
+        <FluentText Class="muted">No model is loaded. <FluentLink Href="models">Warm one up from Local models</FluentLink></FluentText>
     }
     else
     {

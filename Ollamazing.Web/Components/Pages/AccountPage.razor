@@ -2,7 +2,6 @@
 @inherits LiveComponentBase
 @inject AccountMonitor AccountMonitor
 @inject ServerStatusMonitor StatusMonitor
-@inject OllamaServerController ServerController
 @inject IOllamaApiClient OllamaClient
 
 <PageTitle>Account · Ollamazing</PageTitle>
@@ -17,7 +16,7 @@
     <Actions>
         @if (account is { IsSignedIn: true })
         {
-            <FluentButton Loading="isLoadingAccountData" OnClick="LoadAccountDataAsync">Refresh</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Outline" Loading="isLoadingAccountData" OnClick="LoadAccountDataAsync">Refresh</FluentButton>
             @if (isConfirmingSignOut)
             {
                 <FluentButton Appearance="ButtonAppearance.Primary" Loading="isSigningOut" OnClick="SignOutAsync"
@@ -46,15 +45,7 @@
 }
 else if (!serverStatus.IsReachable)
 {
-    <SectionCard Title="The Ollama server is not running">
-        <FluentText Class="muted">
-            The account is linked to the key of the local server, so linking it and reading its credits need the server running.
-        </FluentText>
-        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="8px">
-            <FluentButton Appearance="ButtonAppearance.Primary" Loading="@(isStartingServer || serverStatus.Process.IsRunning)" OnClick="StartServerAsync">Start server</FluentButton>
-            <FluentAnchorButton Href="server" Appearance="ButtonAppearance.Subtle">Server panel</FluentAnchorButton>
-        </FluentStack>
-    </SectionCard>
+    <ServerOfflineCard Reason="The account is linked to the key of the local server, so linking it and reading its credits need the server running." />
 }
 else if (account is null)
 {
@@ -62,7 +53,7 @@ else if (account is null)
     {
         <FluentMessageBar Intent="MessageBarIntent.Error">
             <ChildContent>The server could not reach ollama.com: @accountError</ChildContent>
-            <ActionsTemplate><FluentButton Size="ButtonSize.Small" OnClick="RetryAccountCheckAsync">Retry</FluentButton></ActionsTemplate>
+            <ActionsTemplate><FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="RetryAccountCheckAsync">Retry</FluentButton></ActionsTemplate>
         </FluentMessageBar>
     }
     else
@@ -124,7 +115,7 @@ else if (!account.IsSignedIn)
         {
             <FluentMessageBar Intent="MessageBarIntent.Warning">
                 <ChildContent>No approval arrived within @((int)PairingTimeout.TotalMinutes) minutes, so Ollamazing stopped checking.</ChildContent>
-                <ActionsTemplate><FluentButton Size="ButtonSize.Small" OnClick="WaitForApprovalAgain">Check again</FluentButton></ActionsTemplate>
+                <ActionsTemplate><FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="WaitForApprovalAgain">Check again</FluentButton></ActionsTemplate>
             </FluentMessageBar>
         }
     </SectionCard>
@@ -165,7 +156,7 @@ else
         </FluentGridItem>
         <FluentGridItem Xs="12" Md="4">
             <StatCard Label="Plan allowance" Value="@AllowanceSummary"
-                      Detail="@(balance?.Included?.Period is { } period ? $"renews {Display.Relative(period.Until)}" : "left in this period")" />
+                      Detail="@AllowanceDetail" />
         </FluentGridItem>
         <FluentGridItem Xs="12" Md="4">
             <StatCard Label="@($"Spent · last {RangeLabel(usageRange)}")" Value="@(usageTotals is null ? "–" : Display.Price(usageTotals.UsageUsd))"
@@ -196,7 +187,7 @@ else
         else
         {
             <FluentDataGrid Items="UsageByModel(usageTotals)" GridTemplateColumns="2fr 1fr 1fr 1fr 1fr 1fr">
-                <TemplateColumn Title="Model"><FluentText Font="TextFont.Monospace">@context.Model</FluentText></TemplateColumn>
+                <TemplateColumn Title="Model">@context.Model</TemplateColumn>
                 <TemplateColumn Title="Requests" Align="DataGridCellAlignment.End">@context.RequestCount.ToString("N0")</TemplateColumn>
                 <TemplateColumn Title="Input" Align="DataGridCellAlignment.End">@Display.Count(context.InputTokens)</TemplateColumn>
                 <TemplateColumn Title="Cached input" Align="DataGridCellAlignment.End">@Display.Count(context.CachedInputTokens)</TemplateColumn>
@@ -235,14 +226,12 @@ else
     /// <summary>True after a link approved while this page was waiting, to confirm the outcome above the account details.</summary>
     private bool hasJustPaired;
 
-    private bool isStartingServer;
-
     /// <summary>A second click is required because signing out revokes the server key on ollama.com and stops every cloud model.</summary>
     private bool isConfirmingSignOut;
 
     private bool isSigningOut;
 
-    /// <summary>Failure of a user action (start, sign out), shown at the top of the page.</summary>
+    /// <summary>Failure of a user action (sign out), shown at the top of the page.</summary>
     private string? actionError;
 
     private BalanceResponse? balance;
@@ -254,10 +243,27 @@ else
     /// <summary>Account whose credits and usage are on screen, so a different account triggers a fresh load.</summary>
     private string? loadedAccountId;
 
-    /// <summary>Remaining plan allowance over the whole allowance of the period, as in "$0.00 of $0.00".</summary>
-    private string AllowanceSummary => balance?.Included is { } included
-        ? $"{Display.Price(included.BalanceUsd)} of {Display.Price(included.AllowanceUsd)}"
-        : "–";
+    /// <summary>Remaining plan allowance over the whole allowance of the period, as in "$0.00 of $0.00"; "Not included" for a plan without one.</summary>
+    private string AllowanceSummary => balance?.Included switch
+    {
+        // A plan that grants nothing has no allowance to count down.
+        { AllowanceUsd: 0 } => "Not included",
+        // A plan with an allowance shows what is left of it.
+        { } included => $"{Display.Price(included.BalanceUsd)} of {Display.Price(included.AllowanceUsd)}",
+        // Before the balance is read there is nothing to show.
+        _ => "–"
+    };
+
+    /// <summary>Caption under the plan allowance: the renewal date, or why there is no allowance.</summary>
+    private string AllowanceDetail => balance?.Included switch
+    {
+        // A plan that grants nothing says so instead of promising a renewal.
+        { AllowanceUsd: 0 } => "not part of this plan",
+        // An allowance with a known period tells when it renews.
+        { Period: { } period } => $"renews {Display.Relative(period.Until)}",
+        // An allowance without a period or a balance not yet read keeps the generic caption.
+        _ => "left in this period"
+    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -398,22 +404,6 @@ else
 
     /// <summary>Asks the server for the account again after ollama.com could not be reached.</summary>
     private Task RetryAccountCheckAsync() => AccountMonitor.RefreshAsync();
-
-    /// <summary>Starts the server from this page, since linking cannot happen without it.</summary>
-    private async Task StartServerAsync()
-    {
-        isStartingServer = true;
-        actionError = null;
-
-        // Starting waits on the process, so it runs off the circuit thread.
-        ServerActionResult result = await Task.Run(() => ServerController.Execute(ServerAction.Start));
-
-        // A failed start explains itself; a successful one is followed by the account check once the API answers.
-        if (!result.Succeeded)
-            actionError = result.Message;
-        await StatusMonitor.ProbeNowAsync();
-        isStartingServer = false;
-    }
 
     private void AskSignOut() => isConfirmingSignOut = true;
 

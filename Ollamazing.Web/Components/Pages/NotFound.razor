@@ -1,7 +1,11 @@
 @page "/not-found"
 @layout MainLayout
 
-<PageHeader Title="Not found">
-    <Subtitle>The page you are looking for does not exist.</Subtitle>
-    <Actions><FluentAnchorButton Href="./" Appearance="ButtonAppearance.Primary">Back to the catalog</FluentAnchorButton></Actions>
-</PageHeader>
+<PageHeader Title="Not found" />
+
+<FluentCard>
+    <FluentStack Orientation="Orientation.Vertical" HorizontalAlignment="HorizontalAlignment.Center" VerticalGap="12px">
+        <FluentText>This page does not exist.</FluentText>
+        <FluentAnchorButton Href="./" Appearance="ButtonAppearance.Primary">Back to the catalog</FluentAnchorButton>
+    </FluentStack>
+</FluentCard>

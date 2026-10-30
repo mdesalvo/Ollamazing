@@ -17,26 +17,32 @@
         .ToList();
 }
 
-<PageHeader Title="Local models">
-    <Subtitle>@status.LocalModels.Count installed · @Display.Bytes(status.LocalModels.Where(model => !IsCloudModel(model)).Sum(model => model.Size)) on disk · @status.RunningModels.Count in memory</Subtitle>
-    <Actions>
-        <FluentButton Disabled="@(!status.IsReachable)" OnClick="RefreshAsync">Refresh</FluentButton>
-        <FluentButton Disabled="@(!status.IsReachable || status.LocalModels.Count == 0)" OnClick="UpdateAll"
-                      Title="Pull every installed model again; only changed layers are downloaded">Update all</FluentButton>
-    </Actions>
-</PageHeader>
+@if (status.IsReachable)
+{
+    <PageHeader Title="Local models">
+        <Subtitle>@status.LocalModels.Count installed · @Display.Bytes(status.LocalModels.Where(model => !model.IsCloud()).Sum(model => model.Size)) on disk · @status.RunningModels.Count in memory</Subtitle>
+        <Actions>
+            <FluentButton Appearance="ButtonAppearance.Outline" OnClick="RefreshAsync">Refresh</FluentButton>
+            <FluentButton Appearance="ButtonAppearance.Outline" Disabled="@(status.LocalModels.Count == 0)" OnClick="UpdateAll"
+                          Title="Pull every installed model again; only changed layers are downloaded">Update all</FluentButton>
+        </Actions>
+    </PageHeader>
+}
+else
+{
+    @* Counts and actions are unknown until the server answers. *@
+    <PageHeader Title="Local models" />
+}
 
 @if (!status.IsReachable && !status.IsInitial)
 {
-    <FluentMessageBar Intent="MessageBarIntent.Warning" Margin="@Margin.Bottom4">
-        Ollama is offline, so installed models cannot be listed. <FluentLink Href="server">Open the server panel</FluentLink>
-    </FluentMessageBar>
+    <ServerOfflineCard Reason="Installed models are listed by the Ollama server, so it has to be running to show them." />
 }
-@if (feedback is not null)
+@if (failure is not null)
 {
-    <FluentMessageBar Intent="@(feedbackIsError ? MessageBarIntent.Error : MessageBarIntent.Success)" Margin="@Margin.Bottom4">
-        <ChildContent>@feedback</ChildContent>
-        <ActionsTemplate><FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="DismissFeedback">Dismiss</FluentButton></ActionsTemplate>
+    <FluentMessageBar Intent="MessageBarIntent.Error" Margin="@Margin.Bottom4">
+        <ChildContent>@failure</ChildContent>
+        <ActionsTemplate><FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="DismissFailure">Dismiss</FluentButton></ActionsTemplate>
     </FluentMessageBar>
 }
 
@@ -48,7 +54,7 @@
     <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
         @foreach (Model model in visibleModels)
         {
-            bool isCloud = IsCloudModel(model);
+            bool isCloud = model.IsCloud();
             RunningModel? runningModel = runningByName.GetValueOrDefault(model.Name);
             <FluentCard>
                 <FluentStack Orientation="Orientation.Vertical" VerticalGap="10px">
@@ -88,13 +94,13 @@
                             <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" Width="auto">
                                 @if (runningModel is not null)
                                 {
-                                    <FluentButton OnClick="() => UnloadAsync(model.Name)">Unload</FluentButton>
+                                    <FluentButton Appearance="ButtonAppearance.Outline" OnClick="() => UnloadAsync(model.Name)">Unload</FluentButton>
                                 }
                                 else if (!isCloud)
                                 {
-                                    <FluentButton Title="@WarmUpTitle" OnClick="() => WarmUpAsync(model.Name)">Warm up</FluentButton>
+                                    <FluentButton Appearance="ButtonAppearance.Outline" Title="@WarmUpTitle" OnClick="() => WarmUpAsync(model.Name)">Warm up</FluentButton>
                                 }
-                                <FluentButton OnClick="() => PullManager.StartPull(model.Name)">Update</FluentButton>
+                                <FluentButton Appearance="ButtonAppearance.Outline" OnClick="() => PullManager.StartPull(model.Name)">Update</FluentButton>
                                 @if (pendingDeletion == model.Name)
                                 {
                                     <FluentButton Appearance="ButtonAppearance.Primary" OnClick="() => DeleteAsync(model.Name)">Confirm delete</FluentButton>
@@ -115,7 +121,7 @@
                         {
                             <FluentText Size="TextSize.Size200" Class="muted">@Display.MemoryPlacement(runningModel) · unloads @Display.Relative(runningModel.ExpiresAt.ToLocalTime())</FluentText>
                         }
-                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => ToggleDetails(model)">@(modelsShowingDetails.Contains(model.Name) ? "Hide details" : "Show details")</FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ToggleDetails(model)">@(modelsShowingDetails.Contains(model.Name) ? "Hide details" : "Show details")</FluentButton>
                     </FluentStack>
 
                     @if (modelsShowingDetails.Contains(model.Name))
@@ -149,8 +155,8 @@ else if (status.IsReachable)
     /// <summary>Models whose details and usage snippets are open.</summary>
     private readonly HashSet<string> modelsShowingDetails = new(StringComparer.OrdinalIgnoreCase);
 
-    private string? feedback;
-    private bool feedbackIsError;
+    /// <summary>Failure of the last operation on a model, shown above the list until dismissed.</summary>
+    private string? failure;
 
     protected override void OnInitialized()
     {
@@ -158,10 +164,6 @@ else if (status.IsReachable)
         Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
         Watch(handler => PullManager.Changed += handler, handler => PullManager.Changed -= handler);
     }
-
-    /// <summary>Cloud models are pointers to ollama.com and have no weights to load locally.</summary>
-    private static bool IsCloudModel(Model model)
-        => model.Name.EndsWith(":cloud", StringComparison.OrdinalIgnoreCase) || model.Name.EndsWith("-cloud", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>Tooltip of the warm-up button, stating how long the model stays resident.</summary>
     private string WarmUpTitle => $"Load into memory for {OllamaOptions.Value.WarmUpKeepAlive}";
@@ -173,22 +175,21 @@ else if (status.IsReachable)
     {
         foreach (Model model in StatusMonitor.Current.LocalModels)
             PullManager.StartPull(model.Name);
-        ShowFeedback($"Queued updates for {StatusMonitor.Current.LocalModels.Count} models.", isError: false);
     }
 
     /// <summary>Loads a model into memory for the configured keep-alive, so its first prompt answers without load delay.</summary>
     private Task WarmUpAsync(string modelName)
-        => RunAsync(modelName, "Warming up", () => OllamaClient.RequestModelLoadAsync(modelName, OllamaOptions.Value.WarmUpKeepAlive));
+        => RunAsync(modelName, "Warming up", "warm up", () => OllamaClient.RequestModelLoadAsync(modelName, OllamaOptions.Value.WarmUpKeepAlive));
 
     /// <summary>Evicts a model from memory through OllamaSharp, freeing RAM and VRAM without deleting it.</summary>
     private Task UnloadAsync(string modelName)
-        => RunAsync(modelName, "Unloading", () => OllamaClient.RequestModelUnloadAsync(modelName));
+        => RunAsync(modelName, "Unloading", "unload", () => OllamaClient.RequestModelUnloadAsync(modelName));
 
     /// <summary>Deletes a model after confirmation and refreshes the shared list.</summary>
     private async Task DeleteAsync(string modelName)
     {
         pendingDeletion = null;
-        await RunAsync(modelName, "Deleting", () => OllamaClient.DeleteModelAsync(modelName));
+        await RunAsync(modelName, "Deleting", "delete", () => OllamaClient.DeleteModelAsync(modelName));
     }
 
     /// <summary>Opens or closes the details of a model.</summary>
@@ -201,21 +202,21 @@ else if (status.IsReachable)
 
     private void CancelDeletion() => pendingDeletion = null;
 
-    private void DismissFeedback() => feedback = null;
+    private void DismissFailure() => failure = null;
 
-    /// <summary>Runs an OllamaSharp operation for a model, showing it as busy and reporting the outcome.</summary>
-    private async Task RunAsync(string modelName, string operationName, Func<Task> operation)
+    /// <summary>Runs an OllamaSharp operation for a model, showing it as busy and reporting only a failure.</summary>
+    private async Task RunAsync(string modelName, string busyLabel, string failedAction, Func<Task> operation)
     {
-        busyOperations[modelName] = operationName;
+        // The card shows the label in place of the buttons until the operation ends.
+        busyOperations[modelName] = busyLabel;
         try
         {
             await operation();
-            ShowFeedback($"{operationName} {modelName}: done.", isError: false);
         }
         catch (Exception operationError)
         {
             // Ollama's own message (model in use, not enough memory...) is the most useful explanation.
-            ShowFeedback($"{operationName} {modelName} failed: {operationError.Message}", isError: true);
+            ShowFailure($"Could not {failedAction} {modelName}: {operationError.Message}");
         }
         finally
         {
@@ -226,9 +227,6 @@ else if (status.IsReachable)
         await StatusMonitor.ProbeNowAsync();
     }
 
-    private void ShowFeedback(string message, bool isError)
-    {
-        feedback = message;
-        feedbackIsError = isError;
-    }
+    /// <summary>Puts a failure message above the list, replacing the previous one.</summary>
+    private void ShowFailure(string message) => failure = message;
 }

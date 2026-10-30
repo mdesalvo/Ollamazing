@@ -51,6 +51,9 @@ public sealed class CatalogQuery
 
     public bool HasSelections => selectedOptions.Values.Any(options => options.Count > 0);
 
+    /// <summary>Number of selected options across all facets, shown on the collapsed filter panel.</summary>
+    public int SelectionCount => selectedOptions.Values.Sum(options => options.Count);
+
     public bool IsSelected(string facetKey, string optionKey) => SelectedOf(facetKey)?.Contains(optionKey) == true;
 
     /// <summary>Selects an option, or deselects it when already selected.</summary>

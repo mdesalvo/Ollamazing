@@ -31,6 +31,7 @@ dotnet run --project Ollamazing.Web          # http://localhost:5222
 - **Multipiattaforma:** niente systemd, sudo, launchctl, taskkill o shell; il server si gestisce con `System.Diagnostics.Process`.
 - **OllamaSharp è l'interlocutore:** si usano `IOllamaApiClient` e i suoi tipi; ciò che manca si aggiunge come extension method in `Ollamazing.Server/Extensions/OllamaClientExtensions.cs`.
 - **UI solo Fluent UI Blazor 5** (versione fissata): componenti Fluent, aspetto dal tema in `MainLayout`, solo API pubblica documentata (mai interni, `.fluent-*`, shadow DOM). Dove Fluent non ha un controllo lo si fa in Razor sui token Fluent (`Shared/DualRangeSlider`).
+- **Linguaggio visivo:** azioni di pagina Outline; azione principale di un blocco Primary; azioni dentro card e righe Small Outline (le conferme: Primary + Cancel Subtle); stati con `FluentBadge` Tint (Brand installato, Success riuscito, Warning al limite, Danger errore, Informative cloud); server spento → `ServerOfflineCard` dove la pagina non funziona senza; solo gli errori in `FluentMessageBar`; monospace solo per codice, log, digest e configurazione.
 - **Faccette:** AND tra faccette, OR dentro la stessa; conteggi disgiuntivi.
 
 ## Coordinate

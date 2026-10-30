@@ -148,4 +148,8 @@ public static class OllamaClientExtensions
             // The single response only confirms the load and carries nothing to keep.
         }
     }
+
+    /// <summary>True for a cloud model, a pointer to ollama.com with no weights to load or to count as disk use.</summary>
+    public static bool IsCloud(this Model model)
+        => model.Name.EndsWith(":cloud", StringComparison.OrdinalIgnoreCase) || model.Name.EndsWith("-cloud", StringComparison.OrdinalIgnoreCase);
 }

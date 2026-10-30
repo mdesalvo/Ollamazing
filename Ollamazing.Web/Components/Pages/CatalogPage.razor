@@ -27,14 +27,14 @@
 
 @{
     // Facets and results are computed once per render and shared by the panel, the counters and the list.
-    IReadOnlyList<CatalogModel> allModels = CatalogService.Models;
-    IReadOnlyList<Facet> facets = query.BuildFacets(allModels);
+    allModels = CatalogService.Models;
+    facets = query.BuildFacets(allModels);
     IReadOnlyList<CatalogModel> matchingModels = SortModels(allModels.Where(model => query.Matches(model, facets))).ToList();
     int modelsAwaitingSizes = query.CountAwaitingSizes(allModels, facets);
 }
 
 <FluentGrid Spacing="4">
-    <FluentGridItem Xs="12" Md="3" Lg="2">
+    <FluentGridItem Xs="12" Md="3" Lg="2" HiddenWhen="GridItemHidden.SmAndDown">
         <SectionCard Title="Filters">
             <Actions>
                 @if (query.HasSelections || query.IsSizeRangeActive || query.SearchText.Length > 0)
@@ -43,53 +43,25 @@
                 }
             </Actions>
             <ChildContent>
-
-            @foreach (Facet facet in facets)
-            {
-                <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
-                    <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center">
-                        <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">@facet.Title</FluentText>
-                        <FluentSpacer />
-                        @if (query.HasSelectionsIn(facet.Key))
-                        {
-                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ClearFacet(facet)">Clear</FluentButton>
-                        }
-                    </FluentStack>
-                    @foreach (FacetOption option in facet.Options)
-                    {
-                        int optionCount = query.CountOption(allModels, facets, facet, option);
-                        bool isSelected = query.IsSelected(facet.Key, option.Key);
-                        <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center">
-                            <FluentCheckbox Label="@option.Label" Value="isSelected" Disabled="@(optionCount == 0 && !isSelected)"
-                                            ValueChanged="(bool _) => ToggleOption(facet, option)" />
-                            <FluentSpacer />
-                            <FluentText Size="TextSize.Size200" Class="muted">@optionCount</FluentText>
-                        </FluentStack>
-                    }
-                </FluentStack>
-                <FluentDivider />
-            }
-
-            <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
-                <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">Memory size</FluentText>
-                <FluentText Weight="TextWeight.Semibold">@SizeStepLabel(sizeLowIndex) – @SizeStepLabel(sizeHighIndex)</FluentText>
-                <DualRangeSlider MaxIndex="SizeStepsInGigabytes.Length - 1" LowIndex="sizeLowIndex" HighIndex="sizeHighIndex"
-                                 RangeChanged="SetSizeRange" Disabled="query.IsCloudOnly" AriaLabel="Memory size" StepLabel="SizeStepLabel" />
-                <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" Wrap="true">
-                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Disabled="query.IsCloudOnly" OnClick="FitToMachineMemory"
-                                  Title="Limit to models with a tag that fits in the memory of this machine">Fit to my RAM (@Display.Bytes(MachineMemoryBytes))</FluentButton>
-                    @if (query.IsSizeRangeActive)
-                    {
-                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ResetSizeRange">Clear size limit</FluentButton>
-                    }
-                </FluentStack>
-                @if (query.IsCloudOnly)
-                {
-                    <FluentText Size="TextSize.Size200" Class="muted">Cloud models run on ollama.com and need no local memory.</FluentText>
-                }
-            </FluentStack>
+            @FilterControls
             </ChildContent>
         </SectionCard>
+    </FluentGridItem>
+
+    <FluentGridItem Xs="12" HiddenWhen="GridItemHidden.MdAndUp">
+        <FluentAccordion>
+            <FluentAccordionItem Header="@FiltersHeader">
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
+                    @if (query.HasSelections || query.IsSizeRangeActive || query.SearchText.Length > 0)
+                    {
+                        <FluentStack Orientation="Orientation.Horizontal">
+                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ClearAllFilters">Clear all</FluentButton>
+                        </FluentStack>
+                    }
+                    @FilterControls
+                </FluentStack>
+            </FluentAccordionItem>
+        </FluentAccordion>
     </FluentGridItem>
 
     <FluentGridItem Xs="12" Md="9" Lg="10">
@@ -184,10 +156,11 @@
                                 <FluentText Size="TextSize.Size200" Class="muted">@model.ContextWindow context</FluentText>
                             }
                             <FluentText Size="TextSize.Size200" Class="muted">@SizeSummary(model)</FluentText>
-                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => ToggleExpandedAsync(model)">
-                                @(isExpanded ? "Hide tags" : model.TagsLoadedAt is null ? "Show tags" : $"Show {model.Tags.Count} tags")
+                            <FluentSpacer />
+                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ToggleExpandedAsync(model)">
+                                @(isExpanded ? "Hide tags" : model.TagsLoadedAt is null ? "Show tags" : $"Show {TagCount(model.Tags.Count)}")
                             </FluentButton>
-                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => ToggleUsage(model)">@(modelsShowingUsage.Contains(model.Name) ? "Hide usage" : "Use this model")</FluentButton>
+                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ToggleUsage(model)">@(modelsShowingUsage.Contains(model.Name) ? "Hide usage" : "Use this model")</FluentButton>
                         </FluentStack>
 
                         @if (isExpanded)
@@ -205,7 +178,7 @@
                                 <FluentDataGrid Items="visibleTags.AsQueryable()" RowSize="DataGridRowSize.Small" GridTemplateColumns="2fr 1fr 1fr 1fr 220px">
                                     <TemplateColumn Title="Tag">
                                         <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="6px" VerticalAlignment="VerticalAlignment.Center">
-                                            <FluentText Font="TextFont.Monospace">@context.TagName</FluentText>
+                                            <FluentText>@context.TagName</FluentText>
                                             @if (context.IsLatest)
                                             {
                                                 <FluentBadge Size="BadgeSize.Small" Appearance="BadgeAppearance.Tint" Color="BadgeColor.Subtle" Content="latest" />
@@ -246,8 +219,8 @@
                                 @if (model.Tags.Count > visibleTags.Count)
                                 {
                                     <FluentStack Orientation="Orientation.Horizontal">
-                                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => modelsShowingAllTags.Add(model.Name)">
-                                            Show @(model.Tags.Count - visibleTags.Count) tags outside the current filters
+                                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => modelsShowingAllTags.Add(model.Name)">
+                                            Show @TagCount(model.Tags.Count - visibleTags.Count) outside the current filters
                                         </FluentButton>
                                     </FluentStack>
                                 }
@@ -265,7 +238,7 @@
             @if (matchingModels.Count > visibleCount)
             {
                 <FluentStack HorizontalAlignment="HorizontalAlignment.Center">
-                    <FluentButton OnClick="() => visibleCount += PageSize">Show more (@(matchingModels.Count - visibleCount) left)</FluentButton>
+                    <FluentButton Appearance="ButtonAppearance.Outline" OnClick="() => visibleCount += PageSize">Show more (@(matchingModels.Count - visibleCount) left)</FluentButton>
                 </FluentStack>
             }
         </FluentStack>
@@ -273,6 +246,67 @@
 </FluentGrid>
 
 @code {
+    /// <summary>The facets and the size range, shared by the side panel and the collapsible panel of narrow windows.</summary>
+    private RenderFragment FilterControls => @<text>
+        @foreach (Facet facet in facets)
+        {
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
+                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center">
+                    <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">@facet.Title</FluentText>
+                    <FluentSpacer />
+                    @if (query.HasSelectionsIn(facet.Key))
+                    {
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ClearFacet(facet)">Clear</FluentButton>
+                    }
+                </FluentStack>
+                @foreach (FacetOption option in facet.Options)
+                {
+                    int optionCount = query.CountOption(allModels, facets, facet, option);
+                    bool isSelected = query.IsSelected(facet.Key, option.Key);
+                    <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center">
+                        <FluentCheckbox Label="@option.Label" Value="isSelected" Disabled="@(optionCount == 0 && !isSelected)"
+                                        ValueChanged="(bool _) => ToggleOption(facet, option)" />
+                        <FluentSpacer />
+                        <FluentText Size="TextSize.Size200" Class="muted">@optionCount</FluentText>
+                    </FluentStack>
+                }
+            </FluentStack>
+            <FluentDivider />
+        }
+
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
+            <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">Memory size</FluentText>
+            <FluentText Weight="TextWeight.Semibold">@SizeStepLabel(sizeLowIndex) – @SizeStepLabel(sizeHighIndex)</FluentText>
+            <DualRangeSlider MaxIndex="SizeStepsInGigabytes.Length - 1" LowIndex="sizeLowIndex" HighIndex="sizeHighIndex"
+                             RangeChanged="SetSizeRange" Disabled="query.IsCloudOnly" AriaLabel="Memory size" StepLabel="SizeStepLabel" />
+            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" Wrap="true">
+                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Disabled="query.IsCloudOnly" OnClick="FitToMachineMemory"
+                              Title="Limit to models with a tag that fits in the memory of this machine">Fit to my RAM (@Display.Bytes(MachineMemoryBytes))</FluentButton>
+                @if (query.IsSizeRangeActive)
+                {
+                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ResetSizeRange">Clear size limit</FluentButton>
+                }
+            </FluentStack>
+            @if (query.IsCloudOnly)
+            {
+                <FluentText Size="TextSize.Size200" Class="muted">Cloud models run on ollama.com and need no local memory.</FluentText>
+            }
+        </FluentStack>
+    </text>;
+
+    /// <summary>Title of the collapsible filter panel, counting the active filters so they stay visible while it is closed.</summary>
+    private string FiltersHeader
+    {
+        get
+        {
+            // The size range counts as one filter however far it is narrowed.
+            int activeFilters = query.SelectionCount + (query.IsSizeRangeActive ? 1 : 0);
+
+            // Without active filters the title stays plain.
+            return activeFilters == 0 ? "Filters" : $"Filters ({activeFilters} active)";
+        }
+    }
+
     /// <summary>Number of cards rendered per "show more" step, keeping each SignalR render diff small.</summary>
     private const int PageSize = 40;
 
@@ -319,6 +353,12 @@
     private static readonly SortOrder[] SortOrders = Enum.GetValues<SortOrder>();
 
     private readonly CatalogQuery query = new();
+
+    /// <summary>Catalog snapshot of the current render, read by the filter controls.</summary>
+    private IReadOnlyList<CatalogModel> allModels = [];
+
+    /// <summary>Facets built from <see cref="allModels"/> in the current render, read by the filter controls.</summary>
+    private IReadOnlyList<Facet> facets = [];
     private SortOrder sortOrder = SortOrder.Popular;
     private int sizeLowIndex;
     private int sizeHighIndex = SizeStepsInGigabytes.Length - 1;
@@ -514,6 +554,9 @@
         query.SearchText = "";
         ResetSizeRange();
     }
+
+    /// <summary>A count of tags with the noun agreeing, as in "1 tag" or "8 tags".</summary>
+    private static string TagCount(int count) => count == 1 ? "1 tag" : $"{count} tags";
 
     /// <summary>Opens or closes the "Use this model" snippets of a model.</summary>
     private void ToggleUsage(CatalogModel model)
