@@ -65,11 +65,13 @@ public static class Display
         return isFuture ? $"in {amount}" : $"{amount} ago";
     }
 
-    /// <summary>Formats an elapsed duration compactly, as in "2d 4h" or "12m".</summary>
+    /// <summary>Formats an elapsed duration compactly with its two largest units, as in "2d 4h", "3h 12m", "12m" or "5s".</summary>
     public static string Duration(TimeSpan duration) => duration switch
     {
         { TotalDays: >= 1 } => $"{(int)duration.TotalDays}d {duration.Hours}h",
         { TotalHours: >= 1 } => $"{(int)duration.TotalHours}h {duration.Minutes}m",
-        _ => $"{Math.Max(0, duration.Minutes)}m {Math.Max(0, duration.Seconds)}s"
+        // Seconds matter only in the first minute; after it they would just flicker at every refresh.
+        { TotalMinutes: >= 1 } => $"{duration.Minutes}m",
+        _ => $"{Math.Max(0, duration.Seconds)}s"
     };
 }
