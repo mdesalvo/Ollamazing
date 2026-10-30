@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@using System.Reflection
 @implements IDisposable
 @inject ServerStatusMonitor StatusMonitor
 @inject PullManager PullManager
@@ -16,7 +17,10 @@
         *@
         <FluentLayoutItem Area="LayoutArea.Header">
             <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="16px">
-                <FluentText Size="TextSize.Size500" Weight="TextWeight.Semibold" Nowrap="true">🦙 Ollamazing</FluentText>
+                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="6px" Width="auto">
+                    <FluentText Size="TextSize.Size500" Weight="TextWeight.Semibold" Nowrap="true">🦙 Ollamazing</FluentText>
+                    <FluentText Size="TextSize.Size200" Nowrap="true">v@(AppVersion)</FluentText>
+                </FluentStack>
                 <FluentSpacer />
 
                 <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="4px" Width="auto">
@@ -67,6 +71,10 @@
 
     /// <summary>Text colour of the entry of the page on screen: plain white, the brightest tone the bar can carry.</summary>
     private const string OpenSectionText = "var(--colorNeutralForegroundOnBrand)";
+
+    /// <summary>Release of this build, from the version stated once in Directory.Build.props.</summary>
+    private static readonly string AppVersion = typeof(MainLayout).Assembly
+        .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "?";
 
     /// <summary>True once the Ollamazing theme is applied, so the page may be shown.</summary>
     private bool isThemed;
