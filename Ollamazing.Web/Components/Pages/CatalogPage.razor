@@ -37,7 +37,7 @@
     <FluentGridItem Xs="12" Md="3" Lg="2" HiddenWhen="GridItemHidden.SmAndDown">
         <SectionCard Title="Filters">
             <Actions>
-                @if (query.HasSelections || query.IsSizeRangeActive || query.SearchText.Length > 0)
+                @if (query.HasSelections || query.IsSizeRangeActive || query.IsPriceRangeActive || query.SearchText.Length > 0)
                 {
                     <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ClearAllFilters">Clear all</FluentButton>
                 }
@@ -52,7 +52,7 @@
         <FluentAccordion>
             <FluentAccordionItem Header="@FiltersHeader">
                 <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
-                    @if (query.HasSelections || query.IsSizeRangeActive || query.SearchText.Length > 0)
+                    @if (query.HasSelections || query.IsSizeRangeActive || query.IsPriceRangeActive || query.SearchText.Length > 0)
                     {
                         <FluentStack Orientation="Orientation.Horizontal">
                             <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ClearAllFilters">Clear all</FluentButton>
@@ -292,6 +292,32 @@
                 <FluentText Size="TextSize.Size200" Class="muted">Cloud models run on ollama.com and need no local memory.</FluentText>
             }
         </FluentStack>
+
+        <FluentDivider />
+
+        <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
+            <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">Price per 1M tokens</FluentText>
+
+            <FluentText>Input · @PriceStepLabel(inputPriceLowIndex) – @PriceStepLabel(inputPriceHighIndex)</FluentText>
+            <DualRangeSlider MaxIndex="PriceStepsInDollars.Length - 1" LowIndex="inputPriceLowIndex" HighIndex="inputPriceHighIndex"
+                             RangeChanged="SetInputPriceRange" Disabled="query.IsLocalOnly" AriaLabel="Input price" StepLabel="PriceStepLabel" />
+
+            <FluentText>Output · @PriceStepLabel(outputPriceLowIndex) – @PriceStepLabel(outputPriceHighIndex)</FluentText>
+            <DualRangeSlider MaxIndex="PriceStepsInDollars.Length - 1" LowIndex="outputPriceLowIndex" HighIndex="outputPriceHighIndex"
+                             RangeChanged="SetOutputPriceRange" Disabled="query.IsLocalOnly" AriaLabel="Output price" StepLabel="PriceStepLabel" />
+
+            @if (query.IsPriceRangeActive && !query.IsLocalOnly)
+            {
+                <FluentText Size="TextSize.Size200" Class="muted">Only models with pay-as-you-go cloud rates are shown.</FluentText>
+                <FluentStack Orientation="Orientation.Horizontal">
+                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ResetPriceRanges">Clear price limit</FluentButton>
+                </FluentStack>
+            }
+            @if (query.IsLocalOnly)
+            {
+                <FluentText Size="TextSize.Size200" Class="muted">Local models run on this machine and have no token rates.</FluentText>
+            }
+        </FluentStack>
     </text>;
 
     /// <summary>Title of the collapsible filter panel, counting the active filters so they stay visible while it is closed.</summary>
@@ -299,8 +325,8 @@
     {
         get
         {
-            // The size range counts as one filter however far it is narrowed.
-            int activeFilters = query.SelectionCount + (query.IsSizeRangeActive ? 1 : 0);
+            // The size range and the price ranges count as one filter each however far they are narrowed.
+            int activeFilters = query.SelectionCount + (query.IsSizeRangeActive ? 1 : 0) + (query.IsPriceRangeActive ? 1 : 0);
 
             // Without active filters the title stays plain.
             return activeFilters == 0 ? "Filters" : $"Filters ({activeFilters} active)";
@@ -311,6 +337,9 @@
     private const int PageSize = 40;
 
     private const double BytesPerGigabyte = 1e9;
+
+    /// <summary>Steps of the price sliders in dollars per million tokens, covering the rates published on ollama.com.</summary>
+    private static readonly double[] PriceStepsInDollars = [0, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, double.PositiveInfinity];
 
     /// <summary>Slider scale in GB, denser at the small end where consumer hardware lives; the last step means "no limit".</summary>
     private static readonly double[] SizeStepsInGigabytes = [0, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 512, double.PositiveInfinity];
@@ -362,6 +391,14 @@
     private SortOrder sortOrder = SortOrder.Popular;
     private int sizeLowIndex;
     private int sizeHighIndex = SizeStepsInGigabytes.Length - 1;
+
+    /// <summary>Slider positions of the input price range, as indexes into <see cref="PriceStepsInDollars"/>.</summary>
+    private int inputPriceLowIndex;
+    private int inputPriceHighIndex = PriceStepsInDollars.Length - 1;
+
+    /// <summary>Slider positions of the output price range, as indexes into <see cref="PriceStepsInDollars"/>.</summary>
+    private int outputPriceLowIndex;
+    private int outputPriceHighIndex = PriceStepsInDollars.Length - 1;
     private int visibleCount = PageSize;
     private readonly HashSet<string> expandedModels = new(StringComparer.OrdinalIgnoreCase);
 
@@ -483,6 +520,14 @@
         var gigabytes => $"{gigabytes:0} GB"
     };
 
+    /// <summary>Label of a price slider step: the last one as unlimited.</summary>
+    private static string PriceStepLabel(int index)
+        => double.IsPositiveInfinity(PriceStepsInDollars[index]) ? "∞" : Display.Price((decimal)PriceStepsInDollars[index]);
+
+    /// <summary>Price in dollars of a slider step; the last step means no upper bound.</summary>
+    private static decimal PriceStepValue(int index)
+        => double.IsPositiveInfinity(PriceStepsInDollars[index]) ? decimal.MaxValue : (decimal)PriceStepsInDollars[index];
+
     private void ResetPaging() => visibleCount = PageSize;
 
     private void ToggleOption(Facet facet, FacetOption option)
@@ -539,6 +584,31 @@
 
     private void ResetSizeRange() => SetSizeRange((0, SizeStepsInGigabytes.Length - 1));
 
+    /// <summary>Applies a movement of the input price slider to the query; the last step removes the upper bound.</summary>
+    private void SetInputPriceRange((int Low, int High) range)
+    {
+        (inputPriceLowIndex, inputPriceHighIndex) = range;
+        query.MinInputPrice = PriceStepValue(inputPriceLowIndex);
+        query.MaxInputPrice = PriceStepValue(inputPriceHighIndex);
+        ResetPaging();
+    }
+
+    /// <summary>Applies a movement of the output price slider to the query; the last step removes the upper bound.</summary>
+    private void SetOutputPriceRange((int Low, int High) range)
+    {
+        (outputPriceLowIndex, outputPriceHighIndex) = range;
+        query.MinOutputPrice = PriceStepValue(outputPriceLowIndex);
+        query.MaxOutputPrice = PriceStepValue(outputPriceHighIndex);
+        ResetPaging();
+    }
+
+    /// <summary>Opens both price ranges, so models are no longer filtered by their rates.</summary>
+    private void ResetPriceRanges()
+    {
+        SetInputPriceRange((0, PriceStepsInDollars.Length - 1));
+        SetOutputPriceRange((0, PriceStepsInDollars.Length - 1));
+    }
+
     /// <summary>Caps the size range at the largest step that fits in the machine memory.</summary>
     private void FitToMachineMemory()
     {
@@ -553,6 +623,7 @@
         query.ClearSelections();
         query.SearchText = "";
         ResetSizeRange();
+        ResetPriceRanges();
     }
 
     /// <summary>A count of tags with the noun agreeing, as in "1 tag" or "8 tags".</summary>

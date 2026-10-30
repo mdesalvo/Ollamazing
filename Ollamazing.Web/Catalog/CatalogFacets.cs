@@ -46,8 +46,26 @@ public sealed class CatalogQuery
 
     public bool IsSizeRangeActive => MinSizeBytes > 0 || MaxSizeBytes < long.MaxValue;
 
+    /// <summary>Lower bound of the input rate in dollars per million tokens; zero means no lower bound.</summary>
+    public decimal MinInputPrice { get; set; }
+
+    /// <summary>Upper bound of the input rate in dollars per million tokens; <see cref="decimal.MaxValue"/> means no upper bound.</summary>
+    public decimal MaxInputPrice { get; set; } = decimal.MaxValue;
+
+    /// <summary>Lower bound of the output rate in dollars per million tokens; zero means no lower bound.</summary>
+    public decimal MinOutputPrice { get; set; }
+
+    /// <summary>Upper bound of the output rate in dollars per million tokens; <see cref="decimal.MaxValue"/> means no upper bound.</summary>
+    public decimal MaxOutputPrice { get; set; } = decimal.MaxValue;
+
+    /// <summary>True when either price range is narrowed, which keeps only models with pay-as-you-go rates.</summary>
+    public bool IsPriceRangeActive => MinInputPrice > 0 || MaxInputPrice < decimal.MaxValue || MinOutputPrice > 0 || MaxOutputPrice < decimal.MaxValue;
+
     /// <summary>True when the selection is restricted to cloud offerings, where memory size has no meaning.</summary>
     public bool IsCloudOnly => SelectedOf(ClassFacetKey) is { Count: 1 } classSelection && classSelection.Contains(CloudOptionKey);
+
+    /// <summary>True when the selection is restricted to local weights, where token rates have no meaning.</summary>
+    public bool IsLocalOnly => SelectedOf(ClassFacetKey) is { Count: 1 } classSelection && classSelection.Contains(LocalOptionKey);
 
     public bool HasSelections => selectedOptions.Values.Any(options => options.Count > 0);
 
@@ -109,9 +127,9 @@ public sealed class CatalogQuery
         ];
     }
 
-    /// <summary>True when a model satisfies search text, size range and every facet except <paramref name="ignoredFacetKey"/>.</summary>
+    /// <summary>True when a model satisfies search text, size range, price ranges and every facet except <paramref name="ignoredFacetKey"/>.</summary>
     public bool Matches(CatalogModel model, IReadOnlyList<Facet> facets, string? ignoredFacetKey = null)
-        => MatchesText(model) && MatchesSizeRange(model) && facets.All(facet => facet.Key == ignoredFacetKey || MatchesFacet(model, facet));
+        => MatchesText(model) && MatchesSizeRange(model) && MatchesPriceRange(model) && facets.All(facet => facet.Key == ignoredFacetKey || MatchesFacet(model, facet));
 
     /// <summary>Number of models the option would show, applying every other facet (disjunctive count).</summary>
     public int CountOption(IReadOnlyList<CatalogModel> models, IReadOnlyList<Facet> facets, Facet facet, FacetOption option)
@@ -173,5 +191,24 @@ public sealed class CatalogQuery
 
         // Unknown sizes cannot be proven inside the range; they are reported by CountAwaitingSizes.
         return model.TagsLoadedAt is not null && model.LocalTags.Any(IsInSizeRange);
+    }
+
+    /// <summary>A model matches the price ranges when its cheapest standard rates fall inside both; an open range does not constrain.</summary>
+    private bool MatchesPriceRange(CatalogModel model)
+    {
+        // Open ranges let every model through, priced or not; a local-only selection ignores the price ranges, as a cloud-only one ignores the size range.
+        if (!IsPriceRangeActive || IsLocalOnly)
+            return true;
+
+        // Only the standard rates count: off-peak discounts apply to part of the day only.
+        List<CatalogPrice> standardPrices = model.Prices.Where(price => !price.IsOffPeak).ToList();
+        if (standardPrices.Count == 0)
+            return false;
+
+        // A missing rate means that side is not billed, as for the output of embedding models.
+        decimal inputRate = standardPrices.Min(price => price.Input ?? 0);
+        decimal outputRate = standardPrices.Min(price => price.Output ?? 0);
+        return inputRate >= MinInputPrice && inputRate <= MaxInputPrice
+            && outputRate >= MinOutputPrice && outputRate <= MaxOutputPrice;
     }
 }
