@@ -1,4 +1,5 @@
 @page "/"
+@using System.Globalization
 @inherits LiveComponentBase
 @inject CatalogService CatalogService
 @inject PullManager PullManager
@@ -38,7 +39,7 @@
             <Actions>
                 @if (query.HasSelections || query.IsSizeRangeActive || query.SearchText.Length > 0)
                 {
-                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="ClearAllFilters">Clear all</FluentButton>
+                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ClearAllFilters">Clear all</FluentButton>
                 }
             </Actions>
             <ChildContent>
@@ -46,7 +47,14 @@
             @foreach (Facet facet in facets)
             {
                 <FluentStack Orientation="Orientation.Vertical" VerticalGap="4px">
-                    <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">@facet.Title</FluentText>
+                    <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center">
+                        <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">@facet.Title</FluentText>
+                        <FluentSpacer />
+                        @if (query.HasSelectionsIn(facet.Key))
+                        {
+                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ClearFacet(facet)">Clear</FluentButton>
+                        }
+                    </FluentStack>
                     @foreach (FacetOption option in facet.Options)
                     {
                         int optionCount = query.CountOption(allModels, facets, facet, option);
@@ -68,11 +76,11 @@
                 <DualRangeSlider MaxIndex="SizeStepsInGigabytes.Length - 1" LowIndex="sizeLowIndex" HighIndex="sizeHighIndex"
                                  RangeChanged="SetSizeRange" Disabled="query.IsCloudOnly" AriaLabel="Memory size" StepLabel="SizeStepLabel" />
                 <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" Wrap="true">
-                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" Disabled="query.IsCloudOnly" OnClick="FitToMachineMemory"
-                                  Title="Limit to models with a tag that fits in the memory of this machine">Fits my RAM (@Display.Bytes(MachineMemoryBytes))</FluentButton>
+                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Disabled="query.IsCloudOnly" OnClick="FitToMachineMemory"
+                                  Title="Limit to models with a tag that fits in the memory of this machine">Fit to my RAM (@Display.Bytes(MachineMemoryBytes))</FluentButton>
                     @if (query.IsSizeRangeActive)
                     {
-                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="ResetSizeRange">Any size</FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ResetSizeRange">Clear size limit</FluentButton>
                     }
                 </FluentStack>
                 @if (query.IsCloudOnly)
@@ -179,6 +187,7 @@
                             <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => ToggleExpandedAsync(model)">
                                 @(isExpanded ? "Hide tags" : model.TagsLoadedAt is null ? "Show tags" : $"Show {model.Tags.Count} tags")
                             </FluentButton>
+                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => ToggleUsage(model)">@(modelsShowingUsage.Contains(model.Name) ? "Hide usage" : "Use this model")</FluentButton>
                         </FluentStack>
 
                         @if (isExpanded)
@@ -207,7 +216,16 @@
                                             }
                                         </FluentStack>
                                     </TemplateColumn>
-                                    <TemplateColumn Title="Size">@Display.Bytes(context.SizeBytes)</TemplateColumn>
+                                    <TemplateColumn Title="Size">
+                                        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="6px" VerticalAlignment="VerticalAlignment.Center">
+                                            @{ MemoryFit? memoryFit = MemoryFitOf(context); }
+                                            <FluentText Tooltip="@memoryFit?.Hint">@Display.Bytes(context.SizeBytes)</FluentText>
+                                            @if (memoryFit is not null)
+                                            {
+                                                <FluentBadge Size="BadgeSize.Small" Appearance="BadgeAppearance.Tint" Color="@memoryFit.Color" Content="@memoryFit.Label" />
+                                            }
+                                        </FluentStack>
+                                    </TemplateColumn>
                                     <TemplateColumn Title="Context">@context.ContextWindow</TemplateColumn>
                                     <TemplateColumn Title="Input">@context.Inputs</TemplateColumn>
                                     <TemplateColumn Title="" Align="DataGridCellAlignment.End">
@@ -235,6 +253,11 @@
                                 }
                             }
                         }
+
+                        @if (modelsShowingUsage.Contains(model.Name))
+                        {
+                            <UsageSnippets ModelReference="@model.DefaultPullReference" IsEmbedding="@IsEmbedding(model)" />
+                        }
                     </FluentStack>
                 </FluentCard>
             }
@@ -261,6 +284,35 @@
     /// <summary>Physical memory available to this process, the reference for the "fits my RAM" shortcut.</summary>
     private static readonly long MachineMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
 
+    /// <summary>How a downloadable tag compares with the memory of this machine, as a badge colour, a word and the share it needs.</summary>
+    private sealed record MemoryFit(BadgeColor Color, string Label, string Hint);
+
+    /// <summary>Share of the machine memory up to which a tag runs comfortably, leaving room for the context and the system.</summary>
+    private const double ComfortableMemoryShare = 0.7;
+
+    /// <summary>Compares a tag with the machine memory; null for cloud tags, which run on ollama.com.</summary>
+    private static MemoryFit? MemoryFitOf(CatalogTag tag)
+    {
+        // Cloud tags have no weights to hold in memory.
+        if (tag.SizeBytes is not { } sizeBytes)
+            return null;
+
+        // Fraction of the machine memory that the weights alone occupy.
+        double memoryShare = (double)sizeBytes / MachineMemoryBytes;
+
+        // The size tooltip puts the badge in figures, so the user sees how close to the limit the tag is.
+        string hint = $"Needs about {memoryShare.ToString("P0", CultureInfo.InvariantCulture)} of the {Display.Bytes(MachineMemoryBytes)} of memory of this machine";
+        return memoryShare switch
+        {
+            // Room is left for the context window and for everything else running.
+            <= ComfortableMemoryShare => new MemoryFit(BadgeColor.Success, "fits", hint),
+            // It loads, but a long context or other applications may push it out of memory.
+            <= 1 => new MemoryFit(BadgeColor.Warning, "tight", hint),
+            // The weights alone exceed the memory of this machine.
+            _ => new MemoryFit(BadgeColor.Danger, "too large", hint)
+        };
+    }
+
     private enum SortOrder { Popular, Newest, Downloads, Smallest, Name }
 
     /// <summary>Orders offered by the sort selector, most useful first.</summary>
@@ -272,6 +324,9 @@
     private int sizeHighIndex = SizeStepsInGigabytes.Length - 1;
     private int visibleCount = PageSize;
     private readonly HashSet<string> expandedModels = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Models whose "Use this model" snippets are open.</summary>
+    private readonly HashSet<string> modelsShowingUsage = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Expanded models whose tag table ignores the filters, after the user asked to see every tag.</summary>
     private readonly HashSet<string> modelsShowingAllTags = new(StringComparer.OrdinalIgnoreCase);
@@ -396,6 +451,14 @@
         ResetPaging();
     }
 
+    /// <summary>Deselects every option of one facet and restarts paging so the list refreshes as after a single toggle.</summary>
+    private void ClearFacet(Facet facet)
+    {
+        // Only this facet is emptied; the other facets and the search text stay.
+        query.ClearSelections(facet.Key);
+        ResetPaging();
+    }
+
     private void SetSearchText(string? searchText)
     {
         query.SearchText = searchText?.Trim() ?? "";
@@ -451,6 +514,17 @@
         query.SearchText = "";
         ResetSizeRange();
     }
+
+    /// <summary>Opens or closes the "Use this model" snippets of a model.</summary>
+    private void ToggleUsage(CatalogModel model)
+    {
+        // A name already present means the snippets are open, so the click closes them.
+        if (!modelsShowingUsage.Add(model.Name))
+            modelsShowingUsage.Remove(model.Name);
+    }
+
+    /// <summary>True when the model computes embeddings instead of generating text.</summary>
+    private static bool IsEmbedding(CatalogModel model) => model.Capabilities.Contains("embedding", StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Opens or closes the tag table, loading the tags page on demand when the background load has not reached it.</summary>
     private async Task ToggleExpandedAsync(CatalogModel model)

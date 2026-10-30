@@ -1,3 +1,4 @@
+@using System.Globalization
 @inject IOllamaApiClient OllamaClient
 
 @* Description of an installed model, read through OllamaSharp when its row is expanded. *@
@@ -51,6 +52,7 @@ else
             </FluentGridItem>
         }
     </FluentGrid>
+    <UsageSnippets ModelReference="@Model.Name" IsEmbedding="@IsEmbedding(details)" />
 }
 
 @code {
@@ -77,7 +79,16 @@ else
 
     /// <summary>Context length published in the model metadata under the "&lt;architecture&gt;.context_length" key.</summary>
     private static string? ContextLength(ShowModelResponse modelDetails)
-        => modelDetails.Info?.ExtraInfo?
+    {
+        string? tokens = modelDetails.Info?.ExtraInfo?
             .FirstOrDefault(entry => entry.Key.EndsWith(".context_length", StringComparison.Ordinal))
             .Value?.ToString();
+
+        // A token count reads as ollama.com prints it, as in "128K" or "1M"; anything else is shown as published.
+        return long.TryParse(tokens, NumberStyles.None, CultureInfo.InvariantCulture, out long tokenCount) ? Display.Count(tokenCount) : tokens;
+    }
+
+    /// <summary>True when the model computes embeddings instead of generating text.</summary>
+    private static bool IsEmbedding(ShowModelResponse modelDetails)
+        => modelDetails.Capabilities?.Contains("embedding", StringComparer.OrdinalIgnoreCase) == true;
 }

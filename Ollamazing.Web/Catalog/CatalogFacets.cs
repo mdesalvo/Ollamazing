@@ -67,6 +67,12 @@ public sealed class CatalogQuery
 
     public void ClearSelections() => selectedOptions.Clear();
 
+    /// <summary>True when at least one option of the facet is selected.</summary>
+    public bool HasSelectionsIn(string facetKey) => SelectedOf(facetKey) is { Count: > 0 };
+
+    /// <summary>Drops the selected options of one facet, leaving the other facets as they are.</summary>
+    public void ClearSelections(string facetKey) => selectedOptions.Remove(facetKey);
+
     /// <summary>Builds the facets for the given catalog, with predicates that depend on the current selection.</summary>
     public IReadOnlyList<Facet> BuildFacets(IReadOnlyList<CatalogModel> models)
     {

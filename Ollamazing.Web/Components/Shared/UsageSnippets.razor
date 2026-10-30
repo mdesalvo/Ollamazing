@@ -1,0 +1,126 @@
+@* Ready-to-copy snippets that call one model through the local Ollama server, one tab per way of using it. *@
+@inject IOptions<OllamaOptions> OllamaOptions
+@inject IJSRuntime JS
+
+<FluentStack Orientation="Orientation.Vertical" VerticalGap="8px" Margin="@Margin.Top3">
+    <FluentDivider />
+    <FluentText Size="TextSize.Size300" Weight="TextWeight.Semibold">Use this model</FluentText>
+    <FluentTabs>
+        @foreach (Snippet snippet in BuildSnippets())
+        {
+            <FluentTab Header="@snippet.Title">
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="8px">
+                    <FluentText As="TextTag.Pre" Font="TextFont.Monospace" Size="TextSize.Size200" Style="margin: 0; white-space: pre-wrap;">@snippet.Code</FluentText>
+                    <FluentStack Orientation="Orientation.Horizontal">
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => CopyAsync(snippet)">@(copiedTitle == snippet.Title ? "Copied" : "Copy")</FluentButton>
+                    </FluentStack>
+                </FluentStack>
+            </FluentTab>
+        }
+    </FluentTabs>
+</FluentStack>
+
+@code {
+    /// <summary>Pull reference the snippets call, such as "qwen3:8b".</summary>
+    [Parameter, EditorRequired] public string ModelReference { get; set; } = "";
+
+    /// <summary>True for embedding models, whose snippets compute vectors instead of chatting.</summary>
+    [Parameter] public bool IsEmbedding { get; set; }
+
+    /// <summary>One tab of the component: the way of calling the model and the text to copy.</summary>
+    private sealed record Snippet(string Title, string Code);
+
+    /// <summary>Title of the snippet copied last, shown as "Copied" for a moment.</summary>
+    private string? copiedTitle;
+
+    /// <summary>Builds the snippets for the current model, chat or embedding according to its kind.</summary>
+    private IReadOnlyList<Snippet> BuildSnippets()
+    {
+        // The configured server address without a trailing slash, so appended paths do not double it.
+        string baseUrl = OllamaOptions.Value.BaseUrl.TrimEnd('/');
+        string model = ModelReference;
+
+        // Embedding models cannot be run from the terminal, so they get vector snippets and no Terminal tab.
+        if (IsEmbedding)
+        {
+            return
+            [
+                new Snippet("curl", $$"""
+                    curl {{baseUrl}}/api/embed -d '{
+                      "model": "{{model}}",
+                      "input": "Why is the sky blue?"
+                    }'
+                    """),
+                new Snippet("Python", $$"""
+                    from ollama import Client
+
+                    client = Client(host="{{baseUrl}}")
+                    response = client.embed(model="{{model}}", input="Why is the sky blue?")
+                    print(len(response.embeddings[0]))
+                    """),
+                new Snippet("OpenAI-compatible", $$"""
+                    from openai import OpenAI
+
+                    client = OpenAI(base_url="{{baseUrl}}/v1", api_key="ollama")
+                    response = client.embeddings.create(model="{{model}}", input="Why is the sky blue?")
+                    print(len(response.data[0].embedding))
+                    """)
+            ];
+        }
+
+        // Chat models can also be tried straight from the terminal.
+        return
+        [
+            new Snippet("Terminal", $$"""
+                ollama run {{model}}
+                """),
+            new Snippet("curl", $$"""
+                curl {{baseUrl}}/api/chat -d '{
+                  "model": "{{model}}",
+                  "messages": [{ "role": "user", "content": "Why is the sky blue?" }]
+                }'
+                """),
+            new Snippet("Python", $$"""
+                from ollama import Client
+
+                client = Client(host="{{baseUrl}}")
+                response = client.chat(model="{{model}}", messages=[{"role": "user", "content": "Why is the sky blue?"}])
+                print(response.message.content)
+                """),
+            new Snippet("OpenAI-compatible", $$"""
+                from openai import OpenAI
+
+                client = OpenAI(base_url="{{baseUrl}}/v1", api_key="ollama")
+                response = client.chat.completions.create(model="{{model}}", messages=[{"role": "user", "content": "Why is the sky blue?"}])
+                print(response.choices[0].message.content)
+                """)
+        ];
+    }
+
+    /// <summary>Copies a snippet to the clipboard and shows "Copied" on its button for two seconds.</summary>
+    private async Task CopyAsync(Snippet snippet)
+    {
+        try
+        {
+            // The browser clipboard is the only way to hand the text to the user's other applications.
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", snippet.Code);
+        }
+        catch (JSException)
+        {
+            // Clipboard permission denied: the label stays "Copy" so nothing claims a copy that did not happen.
+            return;
+        }
+
+        // The button label confirms the copy.
+        copiedTitle = snippet.Title;
+        StateHasChanged();
+
+        // The confirmation fades after two seconds.
+        await Task.Delay(TimeSpan.FromSeconds(2));
+
+        // A newer copy on another tab keeps its own confirmation.
+        if (copiedTitle == snippet.Title)
+            copiedTitle = null;
+        StateHasChanged();
+    }
+}
