@@ -35,7 +35,7 @@ public sealed record ServerStatus
 /// <summary>Probes the Ollama server periodically and publishes its status to every connected circuit.</summary>
 /// <remarks>
 /// One probe loop serves all users: components subscribe to <see cref="Changed"/> instead of polling on their own,
-/// and every tab sees the effect of an operation made in another one within a poll interval.
+/// so every tab sees the effect of an operation made in another one within a poll interval.
 /// </remarks>
 public sealed class ServerStatusMonitor(
     IOllamaApiClient ollamaClient,

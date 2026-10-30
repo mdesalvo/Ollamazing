@@ -50,7 +50,7 @@ public sealed record AccountStatus(UserResponse? User, string? SignInUrl)
     /// <remarks>The name is only the label ollama.com shows for the key, so changing it does not change what gets authorized.</remarks>
     public AccountStatus WithDeviceName(string deviceName)
     {
-        // A signed-in status has no link, and an empty name keeps the one proposed by the server.
+        // A signed-in status has no link; an empty name keeps the one proposed by the server.
         if (SignInUrl is null || string.IsNullOrWhiteSpace(deviceName) || !Uri.TryCreate(SignInUrl, UriKind.Absolute, out Uri? signInUri))
             return this;
 

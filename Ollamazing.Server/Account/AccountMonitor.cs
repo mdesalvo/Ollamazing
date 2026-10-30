@@ -7,7 +7,7 @@ using Ollamazing.Server.Status;
 
 namespace Ollamazing.Server.Account;
 
-/// <summary>Publishes to every circuit whether the local server is linked to an ollama.com account, and to which one.</summary>
+/// <summary>Publishes to every circuit whether the local server is linked to an ollama.com account and to which one.</summary>
 /// <remarks>
 /// Singleton: the account is asked to the server whenever the server comes up and on demand, such as while pairing.
 /// The link belongs to the server key, so every tab and the sidebar share the same answer.

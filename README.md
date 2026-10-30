@@ -9,17 +9,17 @@
   - **Pricing**: free (local weights or free cloud tier) or paid (cloud usage).
   - **Capabilities**: tools, vision, thinking, embedding, audio…
   - **Memory size**: a min/max slider over the download size of each tag, with a "fits my RAM" shortcut.
-- **Downloads**: pulls run in background with live progress, survive page navigation, and can be cancelled and retried. Any reference can be typed by hand.
+- **Downloads**: pulls run in background with live progress, survive page navigation and can be cancelled and retried. Any reference can be typed by hand.
 - **Local models**: list installed models with size, parameters, quantization and residency. You can update (re-pull), delete, warm up (load in memory), unload and inspect each one.
-- **Server**: API reachability and version, the hosting process, loaded models with GPU share and expiry, and the server log, plus start, stop and restart.
-- **Account**: link the server to your ollama.com account, see purchased credits, plan allowance and cloud usage per model, and sign out.
+- **Server**: API reachability and version, the hosting process, the loaded models with their GPU share and expiry, the server log, plus start, stop and restart.
+- **Account**: link the server to your ollama.com account or sign it out; see purchased credits, plan allowance and cloud usage per model.
 
 ## ollama.com account
 
 Cloud models run on ollama.com and are billed to the account linked to the local server. The link uses the same handshake as `ollama signin`:
 
 1. The server holds an ed25519 key pair in `~/.ollama`. The private key never leaves it.
-2. On the Account page, **Link account on ollama.com** opens ollama.com with the public key and the device name. You sign in there, never through Ollamazing, and approve the device.
+2. On the Account page, **Link account on ollama.com** opens ollama.com with the public key and the device name. You sign in there (never through Ollamazing) and approve the device.
 3. Ollamazing polls the server until the link is active, then shows profile, credits and usage.
 
 The page shows the SHA256 fingerprint of the key being linked, in the format of `ssh-keygen -l`, so you can check it against the device listed on ollama.com. Sign-in links are opened only when they point to `https://ollama.com`.
