@@ -1,4 +1,5 @@
 @page "/models"
+@using System.Globalization
 @inherits LiveComponentBase
 @inject IOllamaApiClient OllamaClient
 @inject ServerStatusMonitor StatusMonitor
@@ -17,7 +18,7 @@
 }
 
 <PageHeader Title="Local models">
-    <Subtitle>@status.LocalModels.Count installed · @Display.Bytes(status.LocalModels.Sum(model => model.Size)) on disk · @status.RunningModels.Count loaded in memory</Subtitle>
+    <Subtitle>@status.LocalModels.Count installed · @Display.Bytes(status.LocalModels.Where(model => !IsCloudModel(model)).Sum(model => model.Size)) on disk · @status.RunningModels.Count in memory</Subtitle>
     <Actions>
         <FluentButton Disabled="@(!status.IsReachable)" OnClick="RefreshAsync">Refresh</FluentButton>
         <FluentButton Disabled="@(!status.IsReachable || status.LocalModels.Count == 0)" OnClick="UpdateAll"
@@ -44,82 +45,87 @@
     <FluentTextInput Appearance="TextInputAppearance.FilledDarker" TextInputType="TextInputType.Search" Placeholder="Filter installed models…" Immediate="true" Width="100%"
                      @bind-Value="filterText" AriaLabel="Filter installed models" Margin="@Margin.Bottom4" />
 
-    <FluentCard>
-        <FluentDataGrid Items="visibleModels.AsQueryable()" ItemKey="model => model.Name" MultiLine="true" GridTemplateColumns="2fr 1fr 1fr 1fr 1fr 2fr 280px">
-            <ChildContent>
-                <TemplateColumn Title="Model">
-                    <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
-                        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="6px" VerticalAlignment="VerticalAlignment.Center">
-                            <FluentText Weight="TextWeight.Semibold">@context.Name</FluentText>
-                            @if (IsCloudModel(context))
-                            {
-                                <FluentBadge Size="BadgeSize.Small" Appearance="BadgeAppearance.Tint" Color="BadgeColor.Informative" Content="cloud" />
-                            }
-                        </FluentStack>
-                        @if (context.Details?.Family is { } family)
+    <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
+        @foreach (Model model in visibleModels)
+        {
+            bool isCloud = IsCloudModel(model);
+            RunningModel? runningModel = runningByName.GetValueOrDefault(model.Name);
+            <FluentCard>
+                <FluentStack Orientation="Orientation.Vertical" VerticalGap="10px">
+                    <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true">
+                        <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold" Nowrap="true">@model.Name</FluentText>
+                        @if (isCloud)
                         {
-                            <FluentText Size="TextSize.Size200" Class="muted">@family</FluentText>
+                            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Informative" Content="cloud" />
+                        }
+                        @if (runningModel is not null)
+                        {
+                            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Brand" Content="in memory" />
+                        }
+                        @if (!string.IsNullOrEmpty(model.Details?.Family))
+                        {
+                            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Subtle" Content="@model.Details.Family" />
+                        }
+                        @if (!string.IsNullOrEmpty(model.Details?.ParameterSize))
+                        {
+                            <FluentBadge Appearance="BadgeAppearance.Outline" Color="BadgeColor.Subtle" Content="@model.Details.ParameterSize" />
+                        }
+                        @if (!string.IsNullOrEmpty(model.Details?.QuantizationLevel))
+                        {
+                            <FluentBadge Appearance="BadgeAppearance.Outline" Color="BadgeColor.Subtle" Content="@model.Details.QuantizationLevel" />
+                        }
+                        <FluentSpacer />
+                        @if (busyOperations.GetValueOrDefault(model.Name) is { } busyOperation)
+                        {
+                            <FluentText Class="muted">@busyOperation…</FluentText>
+                        }
+                        else if (PullManager.FindActive(model.Name) is { } updateJob)
+                        {
+                            <PullProgress Job="updateJob" />
+                        }
+                        else
+                        {
+                            <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" Width="auto">
+                                @if (runningModel is not null)
+                                {
+                                    <FluentButton OnClick="() => UnloadAsync(model.Name)">Unload</FluentButton>
+                                }
+                                else if (!isCloud)
+                                {
+                                    <FluentButton Title="@WarmUpTitle" OnClick="() => WarmUpAsync(model.Name)">Warm up</FluentButton>
+                                }
+                                <FluentButton OnClick="() => PullManager.StartPull(model.Name)">Update</FluentButton>
+                                @if (pendingDeletion == model.Name)
+                                {
+                                    <FluentButton Appearance="ButtonAppearance.Primary" OnClick="() => DeleteAsync(model.Name)">Confirm delete</FluentButton>
+                                    <FluentButton Appearance="ButtonAppearance.Subtle" OnClick="CancelDeletion">Cancel</FluentButton>
+                                }
+                                else
+                                {
+                                    <FluentButton Appearance="ButtonAppearance.Outline" OnClick="() => pendingDeletion = model.Name">Delete</FluentButton>
+                                }
+                            </FluentStack>
                         }
                     </FluentStack>
-                </TemplateColumn>
-                <TemplateColumn Title="Size">@(IsCloudModel(context) ? "–" : Display.Bytes(context.Size))</TemplateColumn>
-                <TemplateColumn Title="Parameters">@context.Details?.ParameterSize</TemplateColumn>
-                <TemplateColumn Title="Quantization">@context.Details?.QuantizationLevel</TemplateColumn>
-                <TemplateColumn Title="Modified">
-                    <FluentText Tooltip="@context.ModifiedAt.ToLocalTime().ToString("g")">@Display.Relative(context.ModifiedAt.ToLocalTime())</FluentText>
-                </TemplateColumn>
-                <TemplateColumn Title="Memory">
-                    @if (runningByName.GetValueOrDefault(context.Name) is { } runningModel)
+
+                    <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="16px" Wrap="true">
+                        <FluentText Size="TextSize.Size200" Class="muted">@(isCloud ? "runs on ollama.com" : $"{Display.Bytes(model.Size)} on disk")</FluentText>
+                        <FluentText Size="TextSize.Size200" Class="muted" Tooltip="@model.ModifiedAt.ToLocalTime().ToString("g", CultureInfo.InvariantCulture)">modified @Display.Relative(model.ModifiedAt.ToLocalTime())</FluentText>
+                        @if (runningModel is not null)
+                        {
+                            <FluentText Size="TextSize.Size200" Class="muted">@Display.MemoryPlacement(runningModel) · unloads @Display.Relative(runningModel.ExpiresAt.ToLocalTime())</FluentText>
+                        }
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="() => ToggleDetails(model)">@(modelsShowingDetails.Contains(model.Name) ? "Hide details" : "Show details")</FluentButton>
+                    </FluentStack>
+
+                    @if (modelsShowingDetails.Contains(model.Name))
                     {
-                        <FluentStack Orientation="Orientation.Vertical" VerticalGap="2px">
-                            <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Brand" Content="loaded" />
-                            <FluentText Size="TextSize.Size200" Class="muted">@Display.Bytes(runningModel.Size) · @GpuShare(runningModel) GPU · unloads @Display.Relative(runningModel.ExpiresAt.ToLocalTime())</FluentText>
-                        </FluentStack>
+                        <LocalModelDetails Model="model" />
                     }
-                    else
-                    {
-                        <FluentText Class="muted">idle</FluentText>
-                    }
-                </TemplateColumn>
-                <TemplateColumn Title="Actions" Align="DataGridCellAlignment.End">
-                    @if (busyOperations.GetValueOrDefault(context.Name) is { } busyOperation)
-                    {
-                        <FluentText Class="muted">@busyOperation…</FluentText>
-                    }
-                    else if (PullManager.FindActive(context.Name) is { } updateJob)
-                    {
-                        <PullProgress Job="updateJob" />
-                    }
-                    else
-                    {
-                        <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" HorizontalAlignment="HorizontalAlignment.End">
-                            @if (runningByName.ContainsKey(context.Name))
-                            {
-                                <FluentButton Size="ButtonSize.Small" OnClick="() => UnloadAsync(context.Name)">Unload</FluentButton>
-                            }
-                            else
-                            {
-                                <FluentButton Size="ButtonSize.Small" Disabled="@IsCloudModel(context)" Title="@WarmUpTitle" OnClick="() => WarmUpAsync(context.Name)">Warm up</FluentButton>
-                            }
-                            <FluentButton Size="ButtonSize.Small" OnClick="() => PullManager.StartPull(context.Name)">Update</FluentButton>
-                            @if (pendingDeletion == context.Name)
-                            {
-                                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Primary" OnClick="() => DeleteAsync(context.Name)">Confirm delete</FluentButton>
-                                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Subtle" OnClick="CancelDeletion">Cancel</FluentButton>
-                            }
-                            else
-                            {
-                                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => pendingDeletion = context.Name">Delete</FluentButton>
-                            }
-                        </FluentStack>
-                    }
-                </TemplateColumn>
-            </ChildContent>
-            <RowDetails>
-                <LocalModelDetails Model="context" />
-            </RowDetails>
-        </FluentDataGrid>
-    </FluentCard>
+                </FluentStack>
+            </FluentCard>
+        }
+    </FluentStack>
 }
 else if (status.IsReachable)
 {
@@ -140,6 +146,9 @@ else if (status.IsReachable)
     /// <summary>Model awaiting delete confirmation; a second click is required because deleting cannot be undone.</summary>
     private string? pendingDeletion;
 
+    /// <summary>Models whose details and usage snippets are open.</summary>
+    private readonly HashSet<string> modelsShowingDetails = new(StringComparer.OrdinalIgnoreCase);
+
     private string? feedback;
     private bool feedbackIsError;
 
@@ -153,10 +162,6 @@ else if (status.IsReachable)
     /// <summary>Cloud models are pointers to ollama.com and have no weights to load locally.</summary>
     private static bool IsCloudModel(Model model)
         => model.Name.EndsWith(":cloud", StringComparison.OrdinalIgnoreCase) || model.Name.EndsWith("-cloud", StringComparison.OrdinalIgnoreCase);
-
-    /// <summary>Share of a loaded model placed on the GPU; the remainder runs on CPU and system RAM.</summary>
-    private static string GpuShare(RunningModel runningModel)
-        => runningModel.Size > 0 ? $"{runningModel.SizeVram * 100.0 / runningModel.Size:0}%" : "0%";
 
     /// <summary>Tooltip of the warm-up button, stating how long the model stays resident.</summary>
     private string WarmUpTitle => $"Load into memory for {OllamaOptions.Value.WarmUpKeepAlive}";
@@ -184,6 +189,14 @@ else if (status.IsReachable)
     {
         pendingDeletion = null;
         await RunAsync(modelName, "Deleting", () => OllamaClient.DeleteModelAsync(modelName));
+    }
+
+    /// <summary>Opens or closes the details of a model.</summary>
+    private void ToggleDetails(Model model)
+    {
+        // A name already in the set means the details are open, so the click closes them.
+        if (!modelsShowingDetails.Remove(model.Name))
+            modelsShowingDetails.Add(model.Name);
     }
 
     private void CancelDeletion() => pendingDeletion = null;

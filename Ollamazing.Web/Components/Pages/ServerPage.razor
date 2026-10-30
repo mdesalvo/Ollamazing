@@ -72,7 +72,7 @@
     {
         <FluentDataGrid Items="status.RunningModels.AsQueryable()" GridTemplateColumns="2fr 2fr 1fr 120px">
             <TemplateColumn Title="Model">@context.Name</TemplateColumn>
-            <TemplateColumn Title="Memory">@MemoryPlacement(context)</TemplateColumn>
+            <TemplateColumn Title="Memory">@Display.MemoryPlacement(context)</TemplateColumn>
             <TemplateColumn Title="Unloads">@Display.Relative(context.ExpiresAt.ToLocalTime())</TemplateColumn>
             <TemplateColumn Title="" Align="DataGridCellAlignment.End">
                 <FluentButton Size="ButtonSize.Small" Loading="@unloadingModels.Contains(context.Name)" OnClick="() => UnloadAsync(context.Name)">Unload</FluentButton>
@@ -239,17 +239,6 @@
         long gpuBytes = status.RunningModels.Sum(model => model.SizeVram);
         return gpuBytes > 0 ? $"{Display.Bytes(totalBytes)} · {Display.Bytes(gpuBytes)} on GPU" : Display.Bytes(totalBytes);
     }
-
-    /// <summary>Memory of a loaded model and how much of it sits on the GPU, as in "4.2 GB · all on GPU".</summary>
-    private static string MemoryPlacement(RunningModel model) => model switch
-    {
-        // Nothing in video memory: the model runs on the processor.
-        { SizeVram: 0 } => $"{Display.Bytes(model.Size)} · on CPU",
-        // The whole model fits in video memory.
-        _ when model.SizeVram >= model.Size => $"{Display.Bytes(model.Size)} · all on GPU",
-        // Part of the model spills into system memory.
-        _ => $"{Display.Bytes(model.Size)} · {model.SizeVram * 100 / model.Size}% on GPU"
-    };
 
     /// <summary>Evicts a model from memory through OllamaSharp.</summary>
     private async Task UnloadAsync(string modelName)

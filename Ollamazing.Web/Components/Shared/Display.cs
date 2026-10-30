@@ -1,4 +1,5 @@
 using System.Globalization;
+using OllamaSharp.Models;
 
 namespace Ollamazing.Web.Components.Shared;
 
@@ -38,9 +39,10 @@ public static class Display
         return $"${amount.ToString("0.00##", CultureInfo.InvariantCulture)}";
     }
 
-    /// <summary>Formats a large counter compactly, as in "79.4K" downloads.</summary>
+    /// <summary>Formats a large counter compactly, as in "79.4K" downloads or "501B" parameters.</summary>
     public static string Count(long count) => count switch
     {
+        >= 1_000_000_000 => $"{(count / 1_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture)}B",
         >= 1_000_000 => $"{(count / 1_000_000d).ToString("0.#", CultureInfo.InvariantCulture)}M",
         >= 1_000 => $"{(count / 1_000d).ToString("0.#", CultureInfo.InvariantCulture)}K",
         _ => count.ToString(CultureInfo.InvariantCulture)
@@ -73,5 +75,16 @@ public static class Display
         // Seconds matter only in the first minute; after it they would just flicker at every refresh.
         { TotalMinutes: >= 1 } => $"{duration.Minutes}m",
         _ => $"{Math.Max(0, duration.Seconds)}s"
+    };
+
+    /// <summary>Memory of a loaded model and how much of it sits on the GPU, as in "4.2 GB · all on GPU".</summary>
+    public static string MemoryPlacement(RunningModel model) => model switch
+    {
+        // Nothing in video memory: the model runs on the processor.
+        { SizeVram: 0 } => $"{Bytes(model.Size)} · on CPU",
+        // The whole model fits in video memory.
+        _ when model.SizeVram >= model.Size => $"{Bytes(model.Size)} · all on GPU",
+        // Part of the model spills into system memory.
+        _ => $"{Bytes(model.Size)} · {model.SizeVram * 100 / model.Size}% on GPU"
     };
 }
