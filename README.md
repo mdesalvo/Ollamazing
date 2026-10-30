@@ -1,6 +1,6 @@
 # Ollamazing
 
-Ollamazing is a Blazor Server dashboard for [Ollama](https://ollama.com): browse the official model catalog with faceted filters, pull models with live progress, start and stop the Ollama server, and keep your local models tidy by updating, deleting or warming them up in memory. Built with .NET 10, [OllamaSharp](https://github.com/awaescher/OllamaSharp) and [Fluent UI Blazor](https://www.fluentui-blazor.net) 5.
+**Ollama handling, made amazing.** Stop juggling terminal commands and browser tabs: Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dashboard. Find the right model in the ollama.com catalog with faceted filters, pull it with live progress, start and stop the server, keep your local models tidy and link your ollama.com cloud account, all in a few clicks. Built with .NET 10, Blazor Server, [OllamaSharp](https://github.com/awaescher/OllamaSharp) and [Fluent UI Blazor](https://www.fluentui-blazor.net) 5.
 
 ## Features
 
