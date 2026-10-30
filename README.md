@@ -66,17 +66,3 @@ Ollamazing manages Ollama as a plain OS process, the same way on every platform:
 - **Stop** terminates the running Ollama server, whether Ollamazing started it or not, provided that the process belongs to your account.
 
 A server running under another account, such as a system service, cannot be stopped from Ollamazing. Stop it with the tools of your OS, then let Ollamazing start its own instance.
-
-## How the catalog is read
-
-ollama.com offers no public catalog API, so Ollamazing reads the public HTML pages:
-
-- `/search` provides the model list, capabilities and the cloud usage level.
-- `/library/<model>/tags` provides per-tag sizes.
-- `/pricing` provides the pay-as-you-go cloud rates per million tokens (input, cached input, output, off-peak), shown on the cards of the models it lists.
-
-Requests are throttled and the result is stored in a SQLite database in the per-user data folder (`~/.local/share/Ollamazing` on Linux, `%LOCALAPPDATA%\Ollamazing` on Windows, `~/Library/Application Support/Ollamazing` on macOS), which `Catalog:DatabasePath` can move. Models that appeared on ollama.com in the last 14 days carry a "new" badge.
-
-## License
-
-Apache 2.0
