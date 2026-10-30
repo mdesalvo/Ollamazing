@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <PackageReference Include="AngleSharp" Version="1.8.*" />
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.*" />
     <PackageReference Include="Microsoft.FluentUI.AspNetCore.Components" Version="5.0.*" />
   </ItemGroup>
 

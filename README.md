@@ -75,7 +75,7 @@ ollama.com offers no public catalog API, so Ollamazing reads the public HTML pag
 - `/library/<model>/tags` provides per-tag sizes.
 - `/pricing` provides the pay-as-you-go cloud rates per million tokens (input, cached input, output, off-peak), shown on the cards of the models it lists.
 
-Requests are throttled and the result is cached in `Ollamazing.Web/data/catalog-cache.json`.
+Requests are throttled and the result is stored in a SQLite database in the per-user data folder (`~/.local/share/Ollamazing` on Linux, `%LOCALAPPDATA%\Ollamazing` on Windows, `~/Library/Application Support/Ollamazing` on macOS), which `Catalog:DatabasePath` can move. Models that appeared on ollama.com in the last 14 days carry a "new" badge.
 
 ## License
 

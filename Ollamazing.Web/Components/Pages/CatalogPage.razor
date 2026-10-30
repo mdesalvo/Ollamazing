@@ -106,6 +106,10 @@
                             <FluentLink Href="@($"https://ollama.com/library/{model.Name}")" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">
                                 <FluentText Size="TextSize.Size400" Weight="TextWeight.Semibold">@model.Name</FluentText>
                             </FluentLink>
+                            @if (model.IsNew)
+                            {
+                                <FluentBadge Appearance="BadgeAppearance.Filled" Color="BadgeColor.Brand" Content="new" />
+                            }
                             @if (model.OffersCloud)
                             {
                                 <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Informative" Content="cloud" />

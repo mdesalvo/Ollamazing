@@ -43,6 +43,15 @@ public sealed record CatalogModel
     /// <summary>When the tags page was last read; null means sizes are not known yet.</summary>
     public DateTimeOffset? TagsLoadedAt { get; init; }
 
+    /// <summary>When the model first appeared in a refresh; null for the models present when the catalog was first built.</summary>
+    public DateTimeOffset? FirstSeenAt { get; init; }
+
+    /// <summary>How many days a model that appeared on ollama.com keeps the "new" badge.</summary>
+    public const int NewModelDays = 14;
+
+    /// <summary>True while a model that appeared after the catalog was first built is recent.</summary>
+    public bool IsNew => FirstSeenAt is { } firstSeenAt && DateTimeOffset.UtcNow - firstSeenAt < TimeSpan.FromDays(NewModelDays);
+
     /// <summary>True when weights can be pulled and run locally, known exactly once tags are loaded.</summary>
     public bool OffersLocal => TagsLoadedAt is not null
         ? Tags.Any(tag => !tag.IsCloud)
@@ -119,11 +128,6 @@ public sealed record CatalogPricing(string? Note, IReadOnlyDictionary<string, IR
         => PricesByModel.TryGetValue(modelName, out IReadOnlyList<CatalogPrice>? prices) ? prices : [];
 }
 
-/// <summary>Snapshot of the catalog persisted on disk between restarts.</summary>
-/// <param name="SchemaVersion">Version of the parsed shape; a cache written by an older parser is discarded.</param>
+/// <summary>The catalog as persisted between restarts.</summary>
 /// <param name="PricingNote">Explanatory paragraph of the pricing table, kept with the rates it describes.</param>
-public sealed record CatalogSnapshot(DateTimeOffset RefreshedAt, IReadOnlyList<CatalogModel> Models, int SchemaVersion, string? PricingNote = null)
-{
-    /// <summary>Bumped whenever the scraper starts extracting different data from the same pages.</summary>
-    public const int CurrentSchemaVersion = 3;
-}
+public sealed record CatalogSnapshot(DateTimeOffset RefreshedAt, IReadOnlyList<CatalogModel> Models, string? PricingNote);

@@ -25,6 +25,7 @@ builder.Services.AddHttpClient<OllamaCatalogScraper>(client =>
 });
 
 // The catalog is shared by every open tab and loads after the server services have started.
+builder.Services.AddSingleton<CatalogStore>();
 builder.Services.AddSingleton<CatalogService>();
 builder.Services.AddHostedService<CatalogStartupService>();
 

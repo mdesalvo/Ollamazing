@@ -7,8 +7,8 @@ public sealed class CatalogOptions
 
     public string BaseUrl { get; set; } = "https://ollama.com";
 
-    /// <summary>File holding the last scraped catalog, so a restart does not hit ollama.com again.</summary>
-    public string CacheFile { get; set; } = "data/catalog-cache.json";
+    /// <summary>Path of the SQLite database holding the catalog; empty means "Ollamazing/ollamazing.db" in the per-user application data folder.</summary>
+    public string DatabasePath { get; set; } = "";
 
     /// <summary>Age after which the cached catalog is considered stale and refreshed in background.</summary>
     public int CacheTtlHours { get; set; } = 24;
