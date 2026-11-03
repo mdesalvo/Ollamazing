@@ -42,4 +42,7 @@ public sealed class ServerControlOptions
 
     /// <summary>Number of log lines shown by the log viewer of the control panel.</summary>
     public int LogLines { get; set; } = 200;
+
+    /// <summary>Hours between two checks for a new Ollama release; 0 disables the check.</summary>
+    public int UpdateCheckHours { get; set; } = 24;
 }

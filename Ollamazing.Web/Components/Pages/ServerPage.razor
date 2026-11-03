@@ -1,6 +1,7 @@
 @page "/server"
 @inherits LiveComponentBase
 @inject ServerStatusMonitor StatusMonitor
+@inject OllamaUpdateMonitor UpdateMonitor
 @inject OllamaServerController ServerController
 @inject IOllamaApiClient OllamaClient
 @inject IOptions<OllamaOptions> OllamaOptions
@@ -10,6 +11,7 @@
 
 @{
     ServerStatus status = StatusMonitor.Current;
+    OllamaUpdateStatus update = UpdateMonitor.Current;
 }
 <PageHeader Title="Ollama server">
     <Subtitle>Checked @Display.Relative(status.CheckedAt)</Subtitle>
@@ -21,6 +23,11 @@
     <FluentMessageBar Intent="MessageBarIntent.Error" Title="@($"{lastResult.Action} failed")" Margin="@Margin.Bottom4">
         @lastResult.Message (@Display.Relative(lastResult.ExecutedAt))
     </FluentMessageBar>
+}
+
+@if (UpdateMonitor.IsEnabled && update.LastError is not null)
+{
+    <FluentMessageBar Intent="MessageBarIntent.Error" Title="Update check failed" Margin="@Margin.Bottom4">@update.LastError</FluentMessageBar>
 }
 
 <FluentCard>
@@ -35,6 +42,42 @@
             @if (IsExternal(status))
             {
                 <FluentText Size="TextSize.Size200" Class="muted">Stop or restart it where it was started: the desktop app, a terminal or a system service.</FluentText>
+            }
+            @if (UpdateMonitor.IsEnabled && status.IsReachable && update.InstalledVersion is not null)
+            {
+                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true" Margin="@Margin.Top2">
+                    @if (update.LatestRelease is null)
+                    {
+                        <FluentText Size="TextSize.Size200" Class="muted">Checking for updates…</FluentText>
+                    }
+                    else if (update.IsUpdateAvailable)
+                    {
+                        <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Warning" Content="update available" />
+                        <FluentText>Ollama @update.LatestRelease.Version is available</FluentText>
+                        <FluentLink Href="@update.LatestRelease.Url" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">Release notes</FluentLink>
+                    }
+                    else
+                    {
+                        <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Success" Content="up to date" />
+                        @if (update.CheckedAt is { } updateCheckedAt)
+                        {
+                            <FluentText Size="TextSize.Size200" Class="muted">Checked @Display.Relative(updateCheckedAt)</FluentText>
+                        }
+                    }
+                </FluentStack>
+                @if (update.IsUpdateAvailable && update.Capability is { } updateCapability)
+                {
+                    <FluentText Size="TextSize.Size200" Class="muted">
+                        @if (updateCapability.Mode == UpdateMode.InPlace)
+                        {
+                            <text>This installation can be updated in place.</text>
+                        }
+                        else
+                        {
+                            <text>@updateCapability.Reason <FluentLink Href="https://ollama.com/download" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">Download Ollama</FluentLink></text>
+                        }
+                    </FluentText>
+                }
             }
         </FluentStack>
         <FluentSpacer />
@@ -140,6 +183,7 @@
     {
         // Every probe updates the cards; the log follows only on request.
         Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
+        Watch(handler => UpdateMonitor.Changed += handler, handler => UpdateMonitor.Changed -= handler);
         StatusMonitor.Changed += ReloadLogWhenFollowing;
         await LoadLogAsync();
     }

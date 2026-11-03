@@ -38,7 +38,8 @@ dotnet run --project Ollamazing.Web          # http://localhost:5222
 
 - **ollama.com non ha API pubblica:** `/search?page=N` vuole `HX-Request: true`; dimensioni in `/library/<nome>/tags`; tariffe in `/pricing#model-pricing`. Il markup si gestisce solo in `OllamaCatalogScraper.cs`; il catalogo si persiste in SQLite (`CatalogStore.cs`, schema versionato con `PRAGMA user_version`) in `ollamazing.db` nella cartella dati dell'utente, spostabile con `Catalog:DatabasePath`.
 - **Account:** è legato alla chiave ed25519 del server in `~/.ollama`. Endpoint locali: `POST /api/me`, `POST /api/signout`, `GET /api/balance`, `GET /api/usage`. Il pairing apre il `signin_url` (solo `https://ollama.com`) e interroga `/api/me` finché il server risulta collegato.
-- **Stato condiviso:** `CatalogService`, `PullManager`, `ServerStatusMonitor`, `AccountMonitor` sono singleton con eventi; i componenti ereditano `LiveComponentBase` e usano `Watch(...)`.
+- **Aggiornamenti:** ultima release da `api.github.com/repos/ollama/ollama/releases/latest` (User-Agent obbligatorio); `UpdateCapabilityDetector` decide se l'installazione si può aggiornare sul posto o solo notificare, al primo controllo che fallisce.
+- **Stato condiviso:** `CatalogService`, `PullManager`, `ServerStatusMonitor`, `AccountMonitor`, `OllamaUpdateMonitor` sono singleton con eventi; i componenti ereditano `LiveComponentBase` e usano `Watch(...)`.
 - **Razor:** niente stringhe tra doppi apici dentro `@onclick="..."`.
 - **Lingue:** UI e commenti in inglese, commenti secondo la skill `code-commentation`.
 - **Shell:** `rm`, `cp` e `mv` sono alias interattivi, si usano `/bin/rm -f`, `/bin/cp -f`, `/bin/mv -f`.

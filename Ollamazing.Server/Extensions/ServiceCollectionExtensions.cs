@@ -7,6 +7,7 @@ using Ollamazing.Server.Configuration;
 using Ollamazing.Server.Lifecycle;
 using Ollamazing.Server.Pulls;
 using Ollamazing.Server.Status;
+using Ollamazing.Server.Updates;
 
 namespace Ollamazing.Server.Extensions;
 
@@ -33,11 +34,13 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<OllamaServerController>();
         services.AddSingleton<ServerStatusMonitor>();
         services.AddSingleton<AccountMonitor>();
+        services.AddSingleton<OllamaUpdateMonitor>();
         services.AddSingleton<PullManager>();
 
         // Auto-start runs before the first status probe, so consumers see a server that is already coming up.
         services.AddHostedService<ServerAutoStartService>();
         services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<ServerStatusMonitor>());
+        services.AddHostedService(serviceProvider => serviceProvider.GetRequiredService<OllamaUpdateMonitor>());
         return services;
     }
 }
