@@ -17,7 +17,7 @@ Ollamazing.Web/        web app: Catalog (scraping ollama.com, faccette) e Compon
 - Web dipende da Server, mai il contrario; Server dipende solo da `Microsoft.Extensions.*` e OllamaSharp.
 - I servizi del server si registrano con `AddOllamazingServer(configuration)`.
 - Il namespace segue la cartella.
-- Versione (`VersionPrefix`) e proprietà comuni stanno in `Directory.Build.props`.
+- Versione (`VersionPrefix`) e proprietà comuni stanno in `Directory.Build.props`; le versioni dei pacchetti in `Directory.Packages.props` (Central Package Management), i `.csproj` hanno `PackageReference` senza `Version`.
 
 ## Comandi
 
