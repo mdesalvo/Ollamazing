@@ -6,20 +6,20 @@ namespace Ollamazing.Web.Components.Shared;
 /// <summary>Formatting rules shared by every page, so sizes and times read the same everywhere.</summary>
 public static class Display
 {
-    /// <summary>Formats a byte count with decimal units, matching the sizes printed by ollama.com and the Ollama CLI.</summary>
+    /// <summary>Formats a byte count with binary units, where a gigabyte is 1024 megabytes.</summary>
     public static string Bytes(long? bytes)
     {
         // Unknown sizes (cloud tags, not loaded yet) are shown as a dash.
         if (bytes is not { } byteCount)
             return "–";
 
-        // Each unit is a thousand times the previous one.
+        // Each unit is 1024 times the previous one, as memory and disks are measured on this machine.
         string[] units = ["B", "KB", "MB", "GB", "TB"];
         double value = byteCount;
         int unitIndex = 0;
-        while (value >= 1000 && unitIndex < units.Length - 1)
+        while (value >= 1024 && unitIndex < units.Length - 1)
         {
-            value /= 1000;
+            value /= 1024;
             unitIndex++;
         }
 

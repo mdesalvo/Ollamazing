@@ -336,8 +336,8 @@
     /// <summary>Number of cards rendered per "show more" step, keeping each SignalR render diff small.</summary>
     private const int PageSize = 40;
 
-    /// <summary>Bytes in one gigabyte, decimal as ollama.com prints model sizes.</summary>
-    private const double BytesPerGigabyte = 1e9;
+    /// <summary>Bytes in one binary gigabyte, the unit of the memory size slider.</summary>
+    private const double BytesPerGigabyte = 1024d * 1024 * 1024;
 
     /// <summary>Steps of the price sliders in dollars per million tokens, covering the rates published on ollama.com.</summary>
     private static readonly double[] PriceStepsInDollars = [0, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, double.PositiveInfinity];
@@ -544,7 +544,7 @@
         // The first step is the empty lower bound.
         0 => "0",
         // Steps below one gigabyte read better in megabytes.
-        < 1 and var gigabytes => $"{gigabytes * 1000:0} MB",
+        < 1 and var gigabytes => $"{gigabytes * 1024:0} MB",
         // Every other step is a whole number of gigabytes.
         var gigabytes => $"{gigabytes:0} GB"
     };

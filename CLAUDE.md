@@ -33,6 +33,7 @@ dotnet run --project Ollamazing.Web          # http://localhost:5222
 - **UI is Fluent UI Blazor 5 only** (pinned version): Fluent components, look from the theme in `MainLayout`, documented public API only (never internals, `.fluent-*` or shadow DOM). Where Fluent has no control it is built in Razor on Fluent tokens (`Shared/DualRangeSlider`).
 - **Visual language:** page actions Outline; the main action of a block Primary; actions inside cards and rows Small Outline (confirmations: Primary + Cancel Subtle); states with `FluentBadge` Tint (Brand installed, Success succeeded, Warning at the limit, Danger error, Informative cloud); server down → `ServerOfflineCard` where the page cannot work without it; only errors in `FluentMessageBar`; monospace only for code, logs, digests and configuration.
 - **Facets:** AND across facets, OR within one; disjunctive counts.
+- **Sizes:** shown in binary units (1 GB = 1024 MB) only through `Display.Bytes`; ollama.com prints decimal units, which the scraper turns into bytes as such.
 
 ## Coordinates
 
