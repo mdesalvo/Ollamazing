@@ -3,8 +3,10 @@ namespace Ollamazing.Web.Catalog;
 /// <summary>Settings for reading the public model catalog published on ollama.com.</summary>
 public sealed class CatalogOptions
 {
+    /// <summary>Name of the configuration section these options are bound from.</summary>
     public const string SectionName = "Catalog";
 
+    /// <summary>Root address of the site the catalog is read from.</summary>
     public string BaseUrl { get; set; } = "https://ollama.com";
 
     /// <summary>Path of the SQLite database holding the catalog; empty means "Ollamazing/ollamazing.db" in the per-user application data folder.</summary>

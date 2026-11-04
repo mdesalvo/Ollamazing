@@ -24,6 +24,7 @@ public sealed record AccountStatus(UserResponse? User, string? SignInUrl)
     {
         get
         {
+            // A signed-in status has no link and so no key to fingerprint.
             // The link carries the OpenSSH public key line ("ssh-ed25519 AAAA…") encoded as unpadded base64.
             if (ReadSignInParameter("key") is not { } encodedKeyLine)
                 return null;

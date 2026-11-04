@@ -144,12 +144,13 @@ else if (status.IsReachable)
 }
 
 @code {
+    /// <summary>Text typed into the filter box, matched against the installed model names.</summary>
     private string? filterText = "";
 
     /// <summary>Operation in progress per model, shown in place of its buttons.</summary>
     private readonly Dictionary<string, string> busyOperations = new(StringComparer.OrdinalIgnoreCase);
 
-    /// <summary>Model awaiting delete confirmation; a second click is required because deleting cannot be undone.</summary>
+    /// <summary>Model awaiting the second click that confirms its deletion.</summary>
     private string? pendingDeletion;
 
     /// <summary>Models whose details and usage snippets are open.</summary>
@@ -158,6 +159,7 @@ else if (status.IsReachable)
     /// <summary>Failure of the last operation on a model, shown above the list until dismissed.</summary>
     private string? failure;
 
+    /// <summary>Subscribes the page to the notifications that change its table.</summary>
     protected override void OnInitialized()
     {
         // The installed list and update progress both change the table.
@@ -166,29 +168,40 @@ else if (status.IsReachable)
     }
 
     /// <summary>Tooltip of the warm-up button, stating how long the model stays resident.</summary>
-    private string WarmUpTitle => $"Load into memory for {OllamaOptions.Value.WarmUpKeepAlive}";
+    private string WarmUpTitle =>
+        // The keep-alive is stated so the user knows when the memory is released again.
+        $"Load into memory for {OllamaOptions.Value.WarmUpKeepAlive}";
 
-    private Task RefreshAsync() => StatusMonitor.ProbeNowAsync();
+    /// <summary>Probes the server immediately instead of waiting for the next poll.</summary>
+    private Task RefreshAsync() =>
+        // The probe refreshes the installed list and the residency of every model at once.
+        StatusMonitor.ProbeNowAsync();
 
     /// <summary>Queues an update for every installed model; each one downloads only its changed layers.</summary>
     private void UpdateAll()
     {
+        // Every installed model is pulled again under its own name, which fetches only the layers that changed.
         foreach (Model model in StatusMonitor.Current.LocalModels)
             PullManager.StartPull(model.Name);
     }
 
     /// <summary>Loads a model into memory for the configured keep-alive, so its first prompt answers without load delay.</summary>
-    private Task WarmUpAsync(string modelName)
-        => RunAsync(modelName, "Warming up", "warm up", () => OllamaClient.RequestModelLoadAsync(modelName, OllamaOptions.Value.WarmUpKeepAlive));
+    private Task WarmUpAsync(string modelName) =>
+        // The labels feed the busy state and the failure message of the shared runner.
+        RunAsync(modelName, "Warming up", "warm up", () => OllamaClient.RequestModelLoadAsync(modelName, OllamaOptions.Value.WarmUpKeepAlive));
 
     /// <summary>Evicts a model from memory through OllamaSharp, freeing RAM and VRAM without deleting it.</summary>
-    private Task UnloadAsync(string modelName)
-        => RunAsync(modelName, "Unloading", "unload", () => OllamaClient.RequestModelUnloadAsync(modelName));
+    private Task UnloadAsync(string modelName) =>
+        // The labels feed the busy state and the failure message of the shared runner.
+        RunAsync(modelName, "Unloading", "unload", () => OllamaClient.RequestModelUnloadAsync(modelName));
 
     /// <summary>Deletes a model after confirmation and refreshes the shared list.</summary>
     private async Task DeleteAsync(string modelName)
     {
+        // The confirmation is consumed so the row returns to its normal buttons.
         pendingDeletion = null;
+
+        // The delete runs as a busy operation and refreshes the shared list afterwards.
         await RunAsync(modelName, "Deleting", "delete", () => OllamaClient.DeleteModelAsync(modelName));
     }
 
@@ -200,9 +213,15 @@ else if (status.IsReachable)
             modelsShowingDetails.Add(model.Name);
     }
 
-    private void CancelDeletion() => pendingDeletion = null;
+    /// <summary>Withdraws the pending delete confirmation.</summary>
+    private void CancelDeletion() =>
+        // Nothing is awaiting confirmation any more.
+        pendingDeletion = null;
 
-    private void DismissFailure() => failure = null;
+    /// <summary>Hides the failure message above the list.</summary>
+    private void DismissFailure() =>
+        // The user has read the failure.
+        failure = null;
 
     /// <summary>Runs an OllamaSharp operation for a model, showing it as busy and reporting only a failure.</summary>
     private async Task RunAsync(string modelName, string busyLabel, string failedAction, Func<Task> operation)
@@ -211,6 +230,7 @@ else if (status.IsReachable)
         busyOperations[modelName] = busyLabel;
         try
         {
+            // The OllamaSharp call the caller chose.
             await operation();
         }
         catch (Exception operationError)
@@ -220,6 +240,7 @@ else if (status.IsReachable)
         }
         finally
         {
+            // The card gets its buttons back whatever the outcome.
             busyOperations.Remove(modelName);
         }
 
@@ -228,5 +249,7 @@ else if (status.IsReachable)
     }
 
     /// <summary>Puts a failure message above the list, replacing the previous one.</summary>
-    private void ShowFailure(string message) => failure = message;
+    private void ShowFailure(string message) =>
+        // Only the latest failure matters to the user.
+        failure = message;
 }

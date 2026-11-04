@@ -12,6 +12,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
     /// <summary>Bumped whenever the scraper starts extracting different data; a database with another version has its tables rebuilt.</summary>
     public const int SchemaVersion = 1;
 
+    /// <summary>Text format of the stored update dates, which sorts chronologically.</summary>
     private const string DateOnlyFormat = "yyyy-MM-dd";
 
     /// <summary>Absolute path of the database file, resolved once from the configuration.</summary>
@@ -20,7 +21,10 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
     /// <summary>Prepares the database and reads the persisted catalog; null when no refresh has been stored yet.</summary>
     public async Task<CatalogSnapshot?> LoadAsync(CancellationToken cancellationToken)
     {
+        // The connection lives for the whole read so the tables are consistent across the queries.
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken);
+
+        // A new or outdated database gets its tables before the first query.
         await PrepareSchemaAsync(connection, cancellationToken);
 
         // Without a state row no refresh ever completed, so there is nothing to restore.
@@ -31,7 +35,10 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             stateCommand.CommandText = "SELECT refreshed_at, pricing_note FROM catalog_state WHERE id = 1";
             await using SqliteDataReader stateReader = await stateCommand.ExecuteReaderAsync(cancellationToken);
             if (!await stateReader.ReadAsync(cancellationToken))
+                // The caller treats null as a first run and goes on to refresh.
                 return null;
+
+            // The state row carries the moment of the last refresh and the optional pricing note.
             refreshedAt = ParseDateTimeOffset(stateReader.GetString(0));
             pricingNote = stateReader.IsDBNull(1) ? null : stateReader.GetString(1);
         }
@@ -40,6 +47,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         Dictionary<string, List<CatalogTag>> tagsByModel = await ReadTagsAsync(connection, cancellationToken);
         Dictionary<string, List<CatalogPrice>> pricesByModel = await ReadPricesAsync(connection, cancellationToken);
 
+        // Models are read in popularity order so the list needs no sorting afterwards.
         List<CatalogModel> models = [];
         await using SqliteCommand modelsCommand = connection.CreateCommand();
         modelsCommand.CommandText = """
@@ -50,7 +58,10 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         await using SqliteDataReader modelsReader = await modelsCommand.ExecuteReaderAsync(cancellationToken);
         while (await modelsReader.ReadAsync(cancellationToken))
         {
+            // The name links the model to the tags and rates grouped above.
             string name = modelsReader.GetString(0);
+
+            // Columns follow the SELECT order: list fields come back from JSON and optional ones from NULL.
             models.Add(new CatalogModel
             {
                 Name = name,
@@ -78,7 +89,10 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
     /// <summary>Replaces the whole stored catalog with the snapshot in a single transaction, so readers never see a half-written refresh.</summary>
     public async Task ReplaceCatalogAsync(CatalogSnapshot snapshot, CancellationToken cancellationToken)
     {
+        // One connection serves the whole replacement so the transaction below covers every write.
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken);
+
+        // Deleting and rewriting happen in one transaction so a failure leaves the previous catalog stored.
         await using SqliteTransaction transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
 
         // Tags and prices of the old models go away through the foreign key cascade.
@@ -111,6 +125,8 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             VALUES ($name, $description, $capabilities, $parameterSizes, $offersCloud, $isCloudFree, $cloudUsageLevel,
                     $downloads, $contextWindow, $updatedOn, $popularityRank, $tagsLoadedAt, $firstSeenAt)
             """;
+
+        // Parameter handles of the model insert, one per column, filled again for every model.
         SqliteParameter name = modelCommand.Parameters.Add("$name", SqliteType.Text);
         SqliteParameter description = modelCommand.Parameters.Add("$description", SqliteType.Text);
         SqliteParameter capabilities = modelCommand.Parameters.Add("$capabilities", SqliteType.Text);
@@ -125,14 +141,18 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         SqliteParameter tagsLoadedAt = modelCommand.Parameters.Add("$tagsLoadedAt", SqliteType.Text);
         SqliteParameter firstSeenAt = modelCommand.Parameters.Add("$firstSeenAt", SqliteType.Text);
 
+        // The tag insert is shared with the single-model tag save.
         await using SqliteCommand tagCommand = CreateTagInsertCommand(connection, transaction, out SqliteParameter[] tagParameters);
 
+        // Every published rate becomes one row tied to its model.
         await using SqliteCommand priceCommand = connection.CreateCommand();
         priceCommand.Transaction = transaction;
         priceCommand.CommandText = """
             INSERT INTO prices (model_name, position, variant, is_off_peak, input, cached_input, output)
             VALUES ($modelName, $position, $variant, $isOffPeak, $input, $cachedInput, $output)
             """;
+
+        // Parameter handles of the rate insert, one per column.
         SqliteParameter priceModelName = priceCommand.Parameters.Add("$modelName", SqliteType.Text);
         SqliteParameter pricePosition = priceCommand.Parameters.Add("$position", SqliteType.Integer);
         SqliteParameter variant = priceCommand.Parameters.Add("$variant", SqliteType.Text);
@@ -141,6 +161,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         SqliteParameter cachedInput = priceCommand.Parameters.Add("$cachedInput", SqliteType.Text);
         SqliteParameter output = priceCommand.Parameters.Add("$output", SqliteType.Text);
 
+        // Models are written in popularity order together with their tags and rates.
         foreach (CatalogModel model in snapshot.Models)
         {
             // Each model row carries its list-valued fields as JSON and its optional fields as NULL.
@@ -165,6 +186,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             // The list index is stored so the rates come back in the order the pricing table printed them.
             for (int position = 0; position < model.Prices.Count; position++)
             {
+                // Rates are stored as text so decimals keep their exact digits.
                 CatalogPrice price = model.Prices[position];
                 priceModelName.Value = model.Name;
                 pricePosition.Value = position;
@@ -177,13 +199,17 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             }
         }
 
+        // The new catalog becomes visible to readers only now.
         await transaction.CommitAsync(cancellationToken);
     }
 
-    /// <summary>Stores the tags just read for one model and stamps when they were read; does nothing when the model has left the catalog.</summary>
+    /// <summary>Stores the tags just read for one model and stamps when they were read.</summary>
     public async Task SaveTagsAsync(string modelName, IReadOnlyList<CatalogTag> tags, DateTimeOffset loadedAt, CancellationToken cancellationToken)
     {
+        // One connection serves the whole save so the stamp and the tags share a transaction.
         await using SqliteConnection connection = await OpenConnectionAsync(cancellationToken);
+
+        // The stamp and the tags change together or not at all.
         await using SqliteTransaction transaction = (SqliteTransaction)await connection.BeginTransactionAsync(cancellationToken);
 
         // The stamp doubles as the existence check: a refresh may have dropped the model while its tags were loading.
@@ -194,6 +220,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             stampCommand.Parameters.AddWithValue("$loadedAt", FormatDateTimeOffset(loadedAt));
             stampCommand.Parameters.AddWithValue("$name", modelName);
             if (await stampCommand.ExecuteNonQueryAsync(cancellationToken) == 0)
+                // No row was stamped, so the model has left the catalog and its tags have nowhere to go.
                 return;
         }
 
@@ -206,9 +233,11 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             await deleteCommand.ExecuteNonQueryAsync(cancellationToken);
         }
 
+        // The fresh tags are inserted with their list position.
         await using SqliteCommand tagCommand = CreateTagInsertCommand(connection, transaction, out SqliteParameter[] tagParameters);
         await InsertTagsAsync(tagCommand, tagParameters, modelName, tags, cancellationToken);
 
+        // Readers see the stamp and the fresh tags together.
         await transaction.CommitAsync(cancellationToken);
     }
 
@@ -224,6 +253,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         // The data folder does not exist on the first run.
         Directory.CreateDirectory(Path.GetDirectoryName(DatabasePath)!);
 
+        // The connection is handed to the caller, which closes it after its queries.
         SqliteConnection connection = new(new SqliteConnectionStringBuilder { DataSource = DatabasePath }.ToString());
         try
         {
@@ -233,22 +263,27 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             await using SqliteCommand pragmaCommand = connection.CreateCommand();
             pragmaCommand.CommandText = "PRAGMA foreign_keys = ON;";
             await pragmaCommand.ExecuteNonQueryAsync(cancellationToken);
+
+            // The connection is ready with cascades active.
             return connection;
         }
         catch
         {
             // A connection that failed halfway is released here because the caller never receives it.
             await connection.DisposeAsync();
+
+            // The original failure reaches the caller unchanged.
             throw;
         }
     }
 
-    /// <summary>Rebuilds the tables whenever the stored schema version differs from <see cref="SchemaVersion"/>; a new database counts as version 0.</summary>
+    /// <summary>Rebuilds the tables whenever the stored schema version differs from <see cref="SchemaVersion"/>.</summary>
     private static async Task PrepareSchemaAsync(SqliteConnection connection, CancellationToken cancellationToken)
     {
         // The version lives in the database header, so it survives with the file.
         await using SqliteCommand versionCommand = connection.CreateCommand();
         versionCommand.CommandText = "PRAGMA user_version;";
+        // A new database reports version 0, which differs from every released schema and so triggers the creation.
         long storedVersion = (long)(await versionCommand.ExecuteScalarAsync(cancellationToken) ?? 0L);
 
         // A matching version means the tables are already the ones this code reads.
@@ -308,14 +343,17 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             PRAGMA user_version = {SchemaVersion};
             PRAGMA journal_mode = WAL;
             """;
+        // The drops, creations and version stamp run as one script; WAL lets readers proceed during writes.
         await schemaCommand.ExecuteNonQueryAsync(cancellationToken);
     }
 
     /// <summary>Reads every stored tag in the order of its model's list, grouped by model name.</summary>
     private static async Task<Dictionary<string, List<CatalogTag>>> ReadTagsAsync(SqliteConnection connection, CancellationToken cancellationToken)
     {
+        // Model names are stored with their exact case, so keys compare ordinally.
         Dictionary<string, List<CatalogTag>> tagsByModel = new(StringComparer.Ordinal);
 
+        // One query reads all tags, ordered so each model's tags stay in list order.
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = "SELECT model_name, full_name, size_bytes, context_window, inputs, digest, is_latest FROM tags ORDER BY model_name, position";
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -325,6 +363,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             string modelName = reader.GetString(0);
             if (!tagsByModel.TryGetValue(modelName, out List<CatalogTag>? modelTags))
                 tagsByModel[modelName] = modelTags = [];
+            // Optional columns come back as NULL for cloud tags and for missing metadata.
             modelTags.Add(new CatalogTag
             {
                 FullName = reader.GetString(1),
@@ -336,14 +375,17 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             });
         }
 
+        // The caller attaches each list to its model.
         return tagsByModel;
     }
 
     /// <summary>Reads every stored rate in the order of its model's pricing rows, grouped by model name.</summary>
     private static async Task<Dictionary<string, List<CatalogPrice>>> ReadPricesAsync(SqliteConnection connection, CancellationToken cancellationToken)
     {
+        // Model names are stored with their exact case, so keys compare ordinally.
         Dictionary<string, List<CatalogPrice>> pricesByModel = new(StringComparer.Ordinal);
 
+        // One query reads all rates, ordered so each model's rates stay in table order.
         await using SqliteCommand command = connection.CreateCommand();
         command.CommandText = "SELECT model_name, variant, is_off_peak, input, cached_input, output FROM prices ORDER BY model_name, position";
         await using SqliteDataReader reader = await command.ExecuteReaderAsync(cancellationToken);
@@ -353,6 +395,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             string modelName = reader.GetString(0);
             if (!pricesByModel.TryGetValue(modelName, out List<CatalogPrice>? modelPrices))
                 pricesByModel[modelName] = modelPrices = [];
+            // Rates come back from text columns where NULL means the table printed a dash.
             modelPrices.Add(new CatalogPrice
             {
                 Variant = reader.IsDBNull(1) ? null : reader.GetString(1),
@@ -363,6 +406,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             });
         }
 
+        // The caller attaches each list to its model.
         return pricesByModel;
     }
 
@@ -370,12 +414,15 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
     /// <param name="tagParameters">Parameters of the command in the order <see cref="InsertTagsAsync"/> fills them.</param>
     private static SqliteCommand CreateTagInsertCommand(SqliteConnection connection, SqliteTransaction transaction, out SqliteParameter[] tagParameters)
     {
+        // The command joins the caller's transaction so tags commit with the rest of the write.
         SqliteCommand command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO tags (full_name, model_name, position, size_bytes, context_window, inputs, digest, is_latest)
             VALUES ($fullName, $modelName, $position, $sizeBytes, $contextWindow, $inputs, $digest, $isLatest)
             """;
+
+        // The parameters are exposed in column order so InsertTagsAsync fills them by index.
         tagParameters =
         [
             command.Parameters.Add("$fullName", SqliteType.Text),
@@ -387,6 +434,8 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             command.Parameters.Add("$digest", SqliteType.Text),
             command.Parameters.Add("$isLatest", SqliteType.Integer)
         ];
+
+        // The caller fills and runs the prepared insert once per tag.
         return command;
     }
 
@@ -398,6 +447,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         IReadOnlyList<CatalogTag> tags,
         CancellationToken cancellationToken)
     {
+        // The list index is stored as the position so the tag order survives a restart.
         for (int position = 0; position < tags.Count; position++)
         {
             // The parameter order is the one fixed by CreateTagInsertCommand.

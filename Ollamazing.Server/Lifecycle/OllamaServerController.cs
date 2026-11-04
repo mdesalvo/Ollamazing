@@ -22,18 +22,16 @@ public sealed record ServerActionResult(ServerAction Action, bool Succeeded, str
 /// <summary>Server process found in the OS process table.</summary>
 /// <param name="IsRunning">True when an Ollama process exists, regardless of whether its HTTP API answers yet.</param>
 /// <param name="IsOwned">True when the process was started by Ollamazing, which then also holds its log.</param>
+/// <param name="ProcessId">Operating system identifier of the process; null when none exists.</param>
 /// <param name="RunningSince">When the process started; null when the OS hides it (processes of other users).</param>
 public sealed record ServerProcessState(bool IsRunning, bool IsOwned, int? ProcessId, DateTimeOffset? RunningSince)
 {
+    /// <summary>State reported when no Ollama process exists.</summary>
     public static ServerProcessState Stopped { get; } = new(false, false, null, null);
 }
 
 /// <summary>Starts, stops and inspects the Ollama server as a plain OS process, the same way on every platform.</summary>
-/// <remarks>
-/// Singleton: it owns the <c>ollama serve</c> child process it starts and buffers its output for the log viewer.
-/// Servers started elsewhere (desktop app, terminal, service) are detected by process name and can be stopped
-/// when the OS grants the permission.
-/// </remarks>
+/// <remarks>Singleton: it owns the <c>ollama serve</c> child process it starts and buffers its output for the log viewer.</remarks>
 public sealed class OllamaServerController : IDisposable
 {
     /// <summary>Number of output lines kept from the owned server process.</summary>
@@ -48,12 +46,20 @@ public sealed class OllamaServerController : IDisposable
     private readonly ServerControlOptions controlOptions;
     private readonly OllamaOptions ollamaOptions;
     private readonly ILogger<OllamaServerController> logger;
+
+    /// <summary>Bounded buffer of the owned process output, fed by its output events.</summary>
     private readonly ConcurrentQueue<string> processLog = new();
+
+    /// <summary>Guards the owned process, since circuits issue lifecycle commands concurrently.</summary>
     private readonly Lock processLock = new();
+
+    /// <summary>Server started by Ollamazing; null when none was started or the last start failed.</summary>
     private Process? ownedProcess;
 
+    /// <summary>Reads the bound option values that drive the server process and its log.</summary>
     public OllamaServerController(IOptions<ServerControlOptions> controlOptions, IOptions<OllamaOptions> ollamaOptions, ILogger<OllamaServerController> logger)
     {
+        // Only the bound values are kept, since options do not change while the application runs.
         this.controlOptions = controlOptions.Value;
         this.ollamaOptions = ollamaOptions.Value;
         this.logger = logger;
@@ -62,11 +68,13 @@ public sealed class OllamaServerController : IDisposable
     /// <summary>Executes a lifecycle action and reports its outcome; expected failures are returned, not thrown.</summary>
     public ServerActionResult Execute(ServerAction action)
     {
+        // Commands are serialised, so two clicks cannot start two servers.
         lock (processLock)
         {
             // Stop and restart both begin by terminating whatever server is running, owned or not.
             if (action is ServerAction.Stop or ServerAction.Restart)
             {
+                // A null result means that no server process is left.
                 string? stopError = StopServerProcesses();
 
                 // A server that survives (owned by another account) keeps the port busy, so no start may follow.
@@ -83,6 +91,7 @@ public sealed class OllamaServerController : IDisposable
             if (currentState.IsRunning)
                 return new ServerActionResult(action, true, $"Already running with PID {currentState.ProcessId}", DateTimeOffset.Now);
 
+            // Nothing runs any more, so the owned server is launched and its outcome handed back.
             return StartServer(action);
         }
     }
@@ -90,6 +99,7 @@ public sealed class OllamaServerController : IDisposable
     /// <summary>Finds the running server, preferring the one started by Ollamazing.</summary>
     public ServerProcessState GetProcessState()
     {
+        // A concurrent start or stop may replace the owned process while it is inspected.
         lock (processLock)
         {
             // The owned process is reported first because its log is available in the viewer.
@@ -109,6 +119,7 @@ public sealed class OllamaServerController : IDisposable
         }
         finally
         {
+            // Process objects hold OS handles, so every one is released including those not chosen.
             foreach (Process serverProcess in serverProcesses)
                 serverProcess.Dispose();
         }
@@ -131,11 +142,13 @@ public sealed class OllamaServerController : IDisposable
     /// <summary>Stops the owned server on shutdown when configured, so it does not outlive the dashboard that started it.</summary>
     public void Dispose()
     {
+        // A start or stop in flight finishes before the process is torn down.
         lock (processLock)
         {
             // A failure is only logged: shutdown must complete even when a runner cannot be stopped.
             if (controlOptions.StopOnExit && ownedProcess is { HasExited: false } && KillProcessTree(ownedProcess) is { } killFailure)
                 logger.LogWarning("Stopping the owned server on exit failed: {Failure}", killFailure);
+            // The handle is released whether or not the process was stopped.
             ownedProcess?.Dispose();
         }
     }
@@ -146,6 +159,7 @@ public sealed class OllamaServerController : IDisposable
         try
         {
             // The log buffer restarts with the process, so the viewer never mixes two server lifetimes.
+            // The new process is recorded as owned before the outcome is reported.
             ownedProcess?.Dispose();
             processLog.Clear();
             ownedProcess = StartOwnedProcess();
@@ -165,7 +179,10 @@ public sealed class OllamaServerController : IDisposable
     /// <remarks>Processes named "ollama" include CLI sessions such as <c>ollama run</c>, which lose their server anyway.</remarks>
     private string? StopServerProcesses()
     {
+        // Collects one entry for each process that the OS refused to end.
         List<string> failures = [];
+
+        // Every process is tried even after a failure, so one denied process does not spare the others.
         foreach (Process serverProcess in Process.GetProcessesByName(ServerProcessName))
         {
             using (serverProcess)
@@ -179,6 +196,7 @@ public sealed class OllamaServerController : IDisposable
             }
         }
 
+        // A null result tells the caller that no server process survived.
         return failures.Count == 0
             ? null
             : $"Could not stop every Ollama process ({string.Join("; ", failures)}). The server runs under another account: stop it there, then let Ollamazing start its own.";
@@ -190,6 +208,7 @@ public sealed class OllamaServerController : IDisposable
         try
         {
             // Model runners are children of the server and hold the GPU memory, so they go down with it.
+            // Waiting for the exit frees the port before a start follows; null reports success.
             process.Kill(entireProcessTree: true);
             process.WaitForExit(ExitTimeout);
             return null;
@@ -209,6 +228,7 @@ public sealed class OllamaServerController : IDisposable
     /// <summary>Launches <c>ollama serve</c> bound to the configured address, buffering its output for the log viewer.</summary>
     private Process StartOwnedProcess()
     {
+        // Output is redirected for the log viewer; no shell or window is involved, which keeps the start identical on every platform.
         ProcessStartInfo startInfo = new(controlOptions.ExecutablePath, ["serve"])
         {
             RedirectStandardOutput = true,
@@ -225,9 +245,11 @@ public sealed class OllamaServerController : IDisposable
         foreach ((string variableName, string variableValue) in controlOptions.Environment)
             startInfo.Environment[variableName] = variableValue;
 
+        // The process is built unstarted so the log handlers can be attached before it writes its first line.
         Process process = new() { StartInfo = startInfo, EnableRaisingEvents = true };
 
         // Ollama writes its log to stderr; both streams end up in the same bounded buffer.
+        // The server is started and the readers are begun only after the handlers are attached.
         process.OutputDataReceived += (_, line) => AppendProcessLog(line.Data);
         process.ErrorDataReceived += (_, line) => AppendProcessLog(line.Data);
         process.Start();
@@ -243,6 +265,7 @@ public sealed class OllamaServerController : IDisposable
         if (line is null)
             return;
 
+        // The buffer is capped, so a long-running server cannot grow memory without bound.
         processLog.Enqueue(line);
         while (processLog.Count > ProcessLogCapacity)
             processLog.TryDequeue(out _);
@@ -263,6 +286,7 @@ public sealed class OllamaServerController : IDisposable
             return $"No server log available: {logFile} does not exist.\nStart the server from Ollamazing to capture its output, or set ServerControl:LogFile.";
 
         // The server keeps the file open for writing, so it is read with shared access.
+        // The tail is cut after reading, since the file has no line index.
         await using FileStream logStream = new(logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
         using StreamReader reader = new(logStream);
         string content = await reader.ReadToEndAsync(cancellationToken);
@@ -274,6 +298,7 @@ public sealed class OllamaServerController : IDisposable
     {
         try
         {
+            // The start time identifies the oldest process and tells since when the server runs.
             return process.StartTime;
         }
         catch (Exception accessError) when (accessError is Win32Exception or InvalidOperationException or NotSupportedException)
@@ -287,16 +312,19 @@ public sealed class OllamaServerController : IDisposable
 /// <summary>Starts the Ollama server when Ollamazing boots, if configured and no server is running yet.</summary>
 public sealed class ServerAutoStartService(OllamaServerController serverController, IOptions<ServerControlOptions> options, ILogger<ServerAutoStartService> logger) : IHostedService
 {
+    /// <summary>Starts the server at boot when configured and no server is running yet.</summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
         // Auto-start is opt-in and never competes with a server already running.
         if (!options.Value.StartOnLaunch || serverController.GetProcessState().IsRunning)
             return Task.CompletedTask;
 
+        // The outcome is only logged, since nobody waits for an answer while the application boots.
         ServerActionResult result = serverController.Execute(ServerAction.Start);
         logger.LogInformation("Auto-start of Ollama: {Message}", result.Message);
         return Task.CompletedTask;
     }
 
+    /// <summary>Leaves the server alone, since the controller stops its own server when it is disposed.</summary>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
 }

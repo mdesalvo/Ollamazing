@@ -6,6 +6,7 @@ public sealed record CatalogModel
     /// <summary>Library name used as the repository part of a pull reference (e.g. "qwen3").</summary>
     public required string Name { get; init; }
 
+    /// <summary>Short summary of the model as printed on the search page.</summary>
     public string Description { get; init; } = "";
 
     /// <summary>Capability badges published by ollama.com (tools, vision, thinking, embedding...).</summary>
@@ -29,6 +30,7 @@ public sealed record CatalogModel
     /// <summary>Context window label shown on the search page for cloud models (e.g. "1M").</summary>
     public string? ContextWindow { get; init; }
 
+    /// <summary>Day the model was last updated on ollama.com, when the search page states it.</summary>
     public DateOnly? UpdatedOn { get; init; }
 
     /// <summary>Position in the catalog popularity ranking, which is the order of the search pages.</summary>
@@ -83,11 +85,13 @@ public sealed record CatalogTag
     /// <remarks>Tags published with a size range (e.g. "18GB - 20GB") keep the upper bound, the safe figure for memory planning.</remarks>
     public long? SizeBytes { get; init; }
 
+    /// <summary>Context window label printed on the tags page for this tag.</summary>
     public string? ContextWindow { get; init; }
 
     /// <summary>Accepted input modalities as printed by ollama.com (e.g. "Text, Image").</summary>
     public string? Inputs { get; init; }
 
+    /// <summary>Short content digest of the tag, which identifies the exact weights.</summary>
     public string? Digest { get; init; }
 
     /// <summary>True when this tag is flagged as "latest", which is what a pull without tag resolves to.</summary>
@@ -123,7 +127,7 @@ public sealed record CatalogPrice
 /// <param name="Note">Explanatory paragraph above the table, which states the unit and the off-peak window.</param>
 public sealed record CatalogPricing(string? Note, IReadOnlyDictionary<string, IReadOnlyList<CatalogPrice>> PricesByModel)
 {
-    /// <summary>Rates published for a model, or none when the model is not in the table.</summary>
+    /// <summary>Rates published for a model, empty when the model is not in the table.</summary>
     public IReadOnlyList<CatalogPrice> PricesOf(string modelName)
         => PricesByModel.TryGetValue(modelName, out IReadOnlyList<CatalogPrice>? prices) ? prices : [];
 }

@@ -13,14 +13,16 @@ public sealed class CatalogService(
     CatalogStore store,
     ILogger<CatalogService> logger)
 {
+    /// <summary>Guards the published catalog state against concurrent writers.</summary>
     private readonly Lock stateLock = new();
 
-    /// <summary>Serialises refreshes, so a manual click during the startup refresh does not scrape twice.</summary>
+    /// <summary>Serialises refreshes of the catalog.</summary>
     private readonly SemaphoreSlim refreshGate = new(1, 1);
 
-    /// <summary>Models currently being enriched with tags, so on-demand and background loads never overlap.</summary>
+    /// <summary>Names of the models whose tags are being loaded right now.</summary>
     private readonly HashSet<string> tagLoadsInFlight = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Latest published catalog, replaced as a whole on every change.</summary>
     private IReadOnlyList<CatalogModel> models = [];
 
     /// <summary>Raised after any change of models, tags or refresh progress; handlers run on the background thread.</summary>
@@ -32,6 +34,7 @@ public sealed class CatalogService(
     /// <summary>When the model list was last read from ollama.com; null before the first successful refresh.</summary>
     public DateTimeOffset? RefreshedAt { get; private set; }
 
+    /// <summary>True while a refresh from ollama.com is running.</summary>
     public bool IsRefreshing { get; private set; }
 
     /// <summary>Explanatory paragraph of the ollama.com pricing table: unit of the rates and off-peak window.</summary>
@@ -50,6 +53,7 @@ public sealed class CatalogService(
         CatalogSnapshot? snapshot = null;
         try
         {
+            // The stored catalog is read first so that pages have models to show before any network call.
             snapshot = await store.LoadAsync(cancellationToken);
         }
         catch (Exception databaseError) when (databaseError is not OperationCanceledException)
@@ -61,20 +65,25 @@ public sealed class CatalogService(
         // A first run has no snapshot and simply waits for the refresh.
         if (snapshot is not null)
         {
+            // The stored state is published as a whole so readers never see a mix of stored and fresh values.
             lock (stateLock)
             {
                 models = snapshot.Models;
                 RefreshedAt = snapshot.RefreshedAt;
                 PricingNote = snapshot.PricingNote;
             }
+
+            // Open pages show the stored catalog straight away.
             Changed?.Invoke();
         }
 
         // A fresh snapshot only needs its missing tag pages completed.
         bool cacheIsFresh = RefreshedAt is not null && DateTimeOffset.UtcNow - RefreshedAt < TimeSpan.FromHours(options.Value.CacheTtlHours);
         if (cacheIsFresh)
+            // Within the time to live the stored list is trusted and only the tag pages that are missing are read.
             await LoadMissingTagsAsync(cancellationToken);
         else
+            // A missing or stale catalog is rebuilt from ollama.com.
             await RefreshAsync(cancellationToken);
     }
 
@@ -89,7 +98,11 @@ public sealed class CatalogService(
         {
             // The refreshing flag drives the spinner of every open catalog page.
             SetRefreshing(true);
+
+            // The search pages give the current model list in popularity order.
             IReadOnlyList<CatalogModel> freshModels = await scraper.ReadModelListAsync(cancellationToken);
+
+            // The cloud rates come from a separate page and are merged into the models below.
             CatalogPricing? pricing = await ReadPricingAsync(cancellationToken);
 
             // Models listed for the first time after the catalog was built are the ones the "new" badge marks.
@@ -110,16 +123,21 @@ public sealed class CatalogService(
                 LastError = null;
                 PricingNote = pricing?.Note ?? PricingNote;
             }
+
+            // The stored copy lets the next restart start with a filled catalog.
             await TryPersistAsync(token => store.ReplaceCatalogAsync(new CatalogSnapshot(refreshedAt, mergedModels, PricingNote), token), cancellationToken);
         }
         catch (Exception refreshError) when (refreshError is not OperationCanceledException)
         {
             // A failed refresh keeps the previous catalog on screen and reports why.
             logger.LogWarning(refreshError, "Catalog refresh failed");
+
+            // The message is shown on the catalog page until the next refresh succeeds.
             LastError = refreshError.Message;
         }
         finally
         {
+            // The spinner stops and the next refresh may start, whatever the outcome.
             SetRefreshing(false);
             refreshGate.Release();
         }
@@ -128,17 +146,20 @@ public sealed class CatalogService(
         await LoadMissingTagsAsync(cancellationToken);
     }
 
-    /// <summary>Reads the cloud rates, tolerating a failure of the pricing page alone so the model list still refreshes.</summary>
+    /// <summary>Reads the cloud rates from the ollama.com pricing page.</summary>
     private async Task<CatalogPricing?> ReadPricingAsync(CancellationToken cancellationToken)
     {
         try
         {
+            // The rates are optional: the model list is complete without them.
             return await scraper.ReadPricingAsync(cancellationToken);
         }
         catch (Exception pricingError) when (pricingError is not OperationCanceledException)
         {
-            // Without fresh rates the previous ones stay on screen until the next refresh.
+            // A failure of the pricing page alone must not stop the model list from refreshing.
             logger.LogWarning(pricingError, "Reading cloud pricing failed");
+
+            // Null tells the merge to keep the previous rates until the next refresh.
             return null;
         }
     }
@@ -170,8 +191,10 @@ public sealed class CatalogService(
         // Models already enriched need no request.
         CatalogModel? model = models.FirstOrDefault(candidate => candidate.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase));
         if (model is null || model.TagsLoadedAt is not null)
+            // An unknown model has nothing to enrich and a loaded one is already complete.
             return;
 
+        // The user is waiting on this model, so its tags are fetched immediately.
         await LoadTagsAsync(modelName, cancellationToken);
     }
 
@@ -181,12 +204,14 @@ public sealed class CatalogService(
         // The work list is taken from the snapshot; models added later are picked up by the next refresh.
         List<string> pendingModelNames = models.Where(model => model.TagsLoadedAt is null).Select(model => model.Name).ToList();
         if (pendingModelNames.Count == 0)
+            // Nothing is missing, so no request is made.
             return;
 
         // Low parallelism keeps the scrape polite while still completing in about a minute.
         await Parallel.ForEachAsync(
             pendingModelNames,
             new ParallelOptions { MaxDegreeOfParallelism = options.Value.MaxConcurrentRequests, CancellationToken = cancellationToken },
+            // Each model is enriched independently; failures are absorbed inside LoadTagsAsync.
             async (modelName, token) => await LoadTagsAsync(modelName, token));
     }
 
@@ -197,11 +222,13 @@ public sealed class CatalogService(
         lock (stateLock)
         {
             if (!tagLoadsInFlight.Add(modelName))
+                // The on-demand load and the background load of the same model must never overlap.
                 return;
         }
 
         try
         {
+            // The tags page gives the sizes that the memory filter needs.
             IReadOnlyList<CatalogTag> tags = await scraper.ReadTagsAsync(modelName, cancellationToken);
 
             // The same instant stamps the in-memory model and its stored row.
@@ -216,7 +243,11 @@ public sealed class CatalogService(
                         : model)
                     .ToList();
             }
+
+            // Open pages show the sizes of this model as soon as they are known.
             Changed?.Invoke();
+
+            // The tags are stored so that a restart does not read the page again.
             await TryPersistAsync(token => store.SaveTagsAsync(modelName, tags, loadedAt, token), cancellationToken);
         }
         catch (Exception tagsError) when (tagsError is not OperationCanceledException)
@@ -226,6 +257,7 @@ public sealed class CatalogService(
         }
         finally
         {
+            // The model becomes loadable again, which matters after a failure.
             lock (stateLock)
                 tagLoadsInFlight.Remove(modelName);
         }
@@ -234,20 +266,24 @@ public sealed class CatalogService(
     /// <summary>Publishes the refreshing flag to every open catalog page.</summary>
     private void SetRefreshing(bool isRefreshing)
     {
+        // The flag drives the spinner of every open catalog page.
         IsRefreshing = isRefreshing;
+
+        // Pages re-render to show or hide the spinner.
         Changed?.Invoke();
     }
 
-    /// <summary>Runs a database write, tolerating its failure so the in-memory catalog and the refresh error message stay untouched.</summary>
+    /// <summary>Runs a database write of the catalog.</summary>
     private async Task TryPersistAsync(Func<CancellationToken, Task> write, CancellationToken cancellationToken)
     {
         try
         {
+            // The write is an optional copy: the in-memory catalog is already published.
             await write(cancellationToken);
         }
         catch (Exception databaseError) when (databaseError is not OperationCanceledException)
         {
-            // A locked or read-only database or data folder costs only the stored copy.
+            // A locked or read-only database or data folder costs only the stored copy and must not surface as a refresh error.
             logger.LogWarning(databaseError, "Saving the catalog to {DatabasePath} failed", store.DatabasePath);
         }
     }
@@ -256,5 +292,6 @@ public sealed class CatalogService(
 /// <summary>Starts the catalog load when the application boots, without delaying the first request.</summary>
 public sealed class CatalogStartupService(CatalogService catalogService) : BackgroundService
 {
+    // The returned task runs in background, so host startup does not wait for the first catalog load.
     protected override Task ExecuteAsync(CancellationToken stoppingToken) => catalogService.InitializeAsync(stoppingToken);
 }

@@ -8,10 +8,7 @@ using Ollamazing.Server.Status;
 namespace Ollamazing.Server.Account;
 
 /// <summary>Publishes to every circuit whether the local server is linked to an ollama.com account and to which one.</summary>
-/// <remarks>
-/// Singleton: the account is asked to the server whenever the server comes up and on demand, such as while pairing.
-/// The link belongs to the server key, so every tab and the sidebar share the same answer.
-/// </remarks>
+/// <remarks>Singleton: the link belongs to the server key, so every tab and the sidebar share the same answer.</remarks>
 public sealed class AccountMonitor : IDisposable
 {
     private readonly IOllamaApiClient ollamaClient;
@@ -27,8 +24,10 @@ public sealed class AccountMonitor : IDisposable
     /// <summary>Reachability seen at the previous status probe, to detect the moment the server comes up.</summary>
     private bool wasServerReachable;
 
+    /// <summary>Wires the monitor to the server status so the account follows the server lifecycle.</summary>
     public AccountMonitor(IOllamaApiClient ollamaClient, ServerStatusMonitor statusMonitor, IOptions<OllamaOptions> options, ILogger<AccountMonitor> logger)
     {
+        // The collaborators and the configured device name are fixed for the lifetime of the singleton.
         this.ollamaClient = ollamaClient;
         this.statusMonitor = statusMonitor;
         this.logger = logger;
@@ -75,6 +74,7 @@ public sealed class AccountMonitor : IDisposable
         }
         finally
         {
+            // Every outcome frees the next waiting check and tells the circuits to redraw, even a failed or skipped one.
             refreshGate.Release();
             Changed?.Invoke();
         }
@@ -96,6 +96,7 @@ public sealed class AccountMonitor : IDisposable
     /// <summary>Checks the account when the server comes up and forgets it when the server goes down.</summary>
     private void OnServerStatusChanged()
     {
+        // Only the transition from down to up counts, so a steady probe stream does not repeat the check.
         bool isServerReachable = statusMonitor.Current.IsReachable;
         bool hasServerComeUp = isServerReachable && !wasServerReachable;
         wasServerReachable = isServerReachable;

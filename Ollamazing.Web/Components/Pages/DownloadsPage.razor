@@ -85,8 +85,10 @@ else
 </FluentStack>
 
 @code {
+    /// <summary>Model reference typed by hand into the pull box.</summary>
     private string? typedReference = "";
 
+    /// <summary>Subscribes the page to the notifications that change what it shows.</summary>
     protected override void OnInitialized()
     {
         // Progress comes from the pulls, reachability from the status probe.
@@ -107,13 +109,17 @@ else
         _ => BadgeColor.Subtle
     };
 
-    /// <summary>Starts a pull for a reference typed by hand, for models outside the official catalog (user namespaces, private registries).</summary>
+    /// <summary>Starts a pull for the reference typed by hand and clears the box.</summary>
     private void PullTypedReference()
     {
         // Blank input has nothing to pull.
         if (string.IsNullOrWhiteSpace(typedReference))
             return;
+
+        // Models outside the official catalog (user namespaces or private registries) are reachable only by a typed reference.
         PullManager.StartPull(typedReference.Trim());
+
+        // The box empties so the next reference starts from a clean field.
         typedReference = "";
     }
 }

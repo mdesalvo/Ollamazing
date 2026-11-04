@@ -14,8 +14,10 @@ public sealed record ServerStatus
     /// <summary>True when the HTTP API answered the last probe.</summary>
     public bool IsReachable { get; init; }
 
+    /// <summary>Version reported by the server; null when the API is not reachable.</summary>
     public string? Version { get; init; }
 
+    /// <summary>Operating system process hosting the server, known even when the API is down.</summary>
     public ServerProcessState Process { get; init; } = ServerProcessState.Stopped;
 
     /// <summary>Models installed on the server; empty when the API is not reachable.</summary>
@@ -24,11 +26,13 @@ public sealed record ServerStatus
     /// <summary>Models resident in memory; empty when the API is not reachable.</summary>
     public IReadOnlyList<RunningModel> RunningModels { get; init; } = [];
 
+    /// <summary>Moment the status was collected.</summary>
     public DateTimeOffset CheckedAt { get; init; } = DateTimeOffset.Now;
 
     /// <summary>True until the first probe completes, so pages can tell "checking" from "down".</summary>
     public bool IsInitial { get; init; }
 
+    /// <summary>Status published before the first probe completes.</summary>
     public static ServerStatus Initial { get; } = new() { IsInitial = true };
 }
 
@@ -52,31 +56,40 @@ public sealed class ServerStatusMonitor(
     /// <summary>Raised after every probe; handlers run on the probe thread.</summary>
     public event Action? Changed;
 
+    /// <summary>Latest status published to the circuits, replaced as a whole after every probe.</summary>
     public ServerStatus Current { get; private set; } = ServerStatus.Initial;
 
     /// <summary>Probes the server right away, used after a lifecycle command or a model operation.</summary>
     public async Task ProbeNowAsync(CancellationToken cancellationToken = default)
     {
+        // A probe already running is waited for, so two requests never hit the server at once.
         await probeGate.WaitAsync(cancellationToken);
         try
         {
+            // The status is swapped as a whole, so readers never see a half-updated record.
             Current = await ProbeAsync(cancellationToken);
         }
         finally
         {
+            // A failed probe must not leave the gate closed for the next one.
             probeGate.Release();
         }
+
+        // Subscribers run outside the gate, so a slow handler does not delay the next probe.
         Changed?.Invoke();
     }
 
+    /// <summary>Probes the server at the configured interval until the host stops.</summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // The interval is clamped to one second so a misconfiguration cannot hammer the server.
         using PeriodicTimer timer = new(TimeSpan.FromSeconds(Math.Max(1, options.Value.StatusPollSeconds)));
+        // The first probe runs at once, so the dashboard leaves the initial state without waiting a full interval.
         do
         {
             try
             {
+                // Every tick refreshes the status shared by all circuits.
                 await ProbeNowAsync(stoppingToken);
             }
             catch (Exception probeError) when (probeError is not OperationCanceledException)
@@ -94,6 +107,7 @@ public sealed class ServerStatusMonitor(
         // The process state is meaningful even when the API is down, e.g. while the server is still starting.
         ServerProcessState processState = serverController.GetProcessState();
 
+        // The probe budget turns a hung server into an unreachable one instead of stalling the loop.
         using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         timeout.CancelAfter(ProbeTimeout);
         try
@@ -102,9 +116,11 @@ public sealed class ServerStatusMonitor(
             if (!await ollamaClient.IsRunningAsync(timeout.Token))
                 return new ServerStatus { Process = processState };
 
+            // A reachable server is asked for its version and both model lists under the same time budget.
             string version = await ollamaClient.GetVersionAsync(timeout.Token);
             IEnumerable<Model> localModels = await ollamaClient.ListLocalModelsAsync(timeout.Token);
             IEnumerable<RunningModel> runningModels = await ollamaClient.ListRunningModelsAsync(timeout.Token);
+            // The answers become one snapshot with the installed models sorted by name for a stable listing.
             return new ServerStatus
             {
                 IsReachable = true,

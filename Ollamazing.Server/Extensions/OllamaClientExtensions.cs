@@ -28,11 +28,13 @@ public static class OllamaClientExtensions
         // An unlinked key is reported as unauthorized, together with the page that links it.
         if (response.StatusCode == HttpStatusCode.Unauthorized)
         {
+            // The unauthorized body carries the link that pairs the key with an account.
             SignInRequiredResponse? signInRequired = await response.Content.ReadFromJsonAsync<SignInRequiredResponse>(cancellationToken);
 
             // The user will authenticate on the linked page, so it must be ollama.com over HTTPS and nothing else.
             if (signInRequired?.SignInUrl is { } signInUrl && !IsTrustedSignInUrl(signInUrl))
                 throw new HttpRequestException($"The server proposed a sign-in page outside https://{TrustedSignInHost}; it was not opened.", null, response.StatusCode);
+            // The link is handed on only after the host check above.
             return new AccountStatus(null, signInRequired?.SignInUrl);
         }
 
@@ -85,11 +87,14 @@ public static class OllamaClientExtensions
 
     /// <summary>Accepts a sign-in link only when it points to ollama.com over HTTPS, without credentials or a custom port.</summary>
     private static bool IsTrustedSignInUrl(string signInUrl)
-        => Uri.TryCreate(signInUrl, UriKind.Absolute, out Uri? signInUri)
-           && signInUri.Scheme == Uri.UriSchemeHttps
-           && signInUri.IsDefaultPort
-           && string.IsNullOrEmpty(signInUri.UserInfo)
-           && signInUri.Host.Equals(TrustedSignInHost, StringComparison.OrdinalIgnoreCase);
+    {
+        // Every condition closes a way for a tampered answer to send the user to a look-alike page.
+        return Uri.TryCreate(signInUrl, UriKind.Absolute, out Uri? signInUri)
+               && signInUri.Scheme == Uri.UriSchemeHttps
+               && signInUri.IsDefaultPort
+               && string.IsNullOrEmpty(signInUri.UserInfo)
+               && signInUri.Host.Equals(TrustedSignInHost, StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>Turns a failed account call into an exception carrying the reason given by the server.</summary>
     private static async Task EnsureAccountSuccessAsync(HttpResponseMessage response, CancellationToken cancellationToken)
@@ -131,6 +136,7 @@ public static class OllamaClientExtensions
     /// <remarks>Counterpart of OllamaSharp's RequestModelUnloadAsync, which evicts a model the same way with a zero keep_alive.</remarks>
     public static async Task RequestModelLoadAsync(this IOllamaApiClient client, string model, string keepAlive, CancellationToken cancellationToken = default)
     {
+        // The capability list tells whether the model can generate at all.
         // Embedding-only models reject generate requests and are loaded through the embed endpoint instead.
         ShowModelResponse modelDescription = await client.ShowModelAsync(model, cancellationToken);
         IReadOnlyCollection<string> capabilities = modelDescription.Capabilities?.ToList() ?? [];

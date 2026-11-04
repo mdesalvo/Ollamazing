@@ -36,7 +36,7 @@
     /// <summary>Builds the snippets for the current model, chat or embedding according to its kind.</summary>
     private IReadOnlyList<Snippet> BuildSnippets()
     {
-        // The configured server address without a trailing slash, so appended paths do not double it.
+        // The model every snippet addresses and the configured server address, which loses its trailing slash so appended paths do not double it.
         string baseUrl = OllamaOptions.Value.BaseUrl.TrimEnd('/');
         string model = ModelReference;
 
@@ -121,6 +121,8 @@
         // A newer copy on another tab keeps its own confirmation.
         if (copiedTitle == snippet.Title)
             copiedTitle = null;
+
+        // The label returns to "Copy" once no newer confirmation is pending.
         StateHasChanged();
     }
 }

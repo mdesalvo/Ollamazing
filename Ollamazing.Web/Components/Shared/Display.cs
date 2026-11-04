@@ -42,6 +42,7 @@ public static class Display
     /// <summary>Formats a large counter compactly, as in "79.4K" downloads or "501B" parameters.</summary>
     public static string Count(long count) => count switch
     {
+        // The largest unit that keeps the number below a thousand is chosen; counts under a thousand are printed whole.
         >= 1_000_000_000 => $"{(count / 1_000_000_000d).ToString("0.#", CultureInfo.InvariantCulture)}B",
         >= 1_000_000 => $"{(count / 1_000_000d).ToString("0.#", CultureInfo.InvariantCulture)}M",
         >= 1_000 => $"{(count / 1_000d).ToString("0.#", CultureInfo.InvariantCulture)}K",
@@ -51,6 +52,7 @@ public static class Display
     /// <summary>Formats a moment relative to now, in the past ("3 min ago") or in the future ("in 4 min").</summary>
     public static string Relative(DateTimeOffset moment)
     {
+        // The sign of the distance tells whether the moment is past or still to come.
         TimeSpan distance = DateTimeOffset.Now - moment;
         bool isFuture = distance < TimeSpan.Zero;
         TimeSpan magnitude = distance.Duration();
@@ -64,6 +66,7 @@ public static class Display
             { TotalDays: < 60 } => $"{(int)magnitude.TotalDays} days",
             _ => $"{(int)(magnitude.TotalDays / 30)} months"
         };
+        // The direction is stated in words: "in" for the future and "ago" for the past.
         return isFuture ? $"in {amount}" : $"{amount} ago";
     }
 

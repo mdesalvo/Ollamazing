@@ -16,11 +16,13 @@
 </FluentCard>
 
 @code {
+    /// <summary>Heading of the section.</summary>
     [Parameter, EditorRequired] public string Title { get; set; } = "";
 
     /// <summary>Controls acting on the section, aligned to the right of its title.</summary>
     [Parameter] public RenderFragment? Actions { get; set; }
 
+    /// <summary>Contents of the section, drawn under its heading.</summary>
     [Parameter] public RenderFragment? ChildContent { get; set; }
 
     /// <summary>Space around the card, as a Fluent margin class such as <c>Margin.Top4</c>.</summary>

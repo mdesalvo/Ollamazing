@@ -3,6 +3,7 @@ namespace Ollamazing.Server.Configuration;
 /// <summary>Connection settings for the Ollama HTTP API driven through OllamaSharp.</summary>
 public sealed class OllamaOptions
 {
+    /// <summary>Configuration section these options are bound from.</summary>
     public const string SectionName = "Ollama";
 
     /// <summary>Base address of the Ollama server; the default matches a stock local installation.</summary>
@@ -23,6 +24,7 @@ public sealed class OllamaOptions
 /// <remarks>The server is managed as a plain OS process through .NET, identically on Windows, macOS and Linux.</remarks>
 public sealed class ServerControlOptions
 {
+    /// <summary>Configuration section these options are bound from.</summary>
     public const string SectionName = "ServerControl";
 
     /// <summary>Path of the ollama executable; a bare name is looked up in PATH.</summary>

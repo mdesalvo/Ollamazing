@@ -77,12 +77,16 @@
     private bool isThemed;
 
     /// <summary>Route of the page on screen, relative to the base address and without query string.</summary>
-    private string CurrentRoute => Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
+    private string CurrentRoute =>
+        // Query string and fragment do not identify a section; the trailing slash is dropped so the catalog route compares as an empty string.
+        Navigation.ToBaseRelativePath(Navigation.Uri).Split('?', '#')[0].TrimEnd('/');
 
     /// <summary>Label colour of an entry: white for the page on screen, so the bar shows where the user is.</summary>
-    private string SectionColor(string route) => route == CurrentRoute ? OpenSectionText : OnBrandText;
+    private string SectionColor(string route) =>
+        // The entry whose route is the current one stands out from the others.
+        route == CurrentRoute ? OpenSectionText : OnBrandText;
 
-    /// <summary>Tooltip of the server entry: which Ollama the dashboard drives, or that none answers.</summary>
+    /// <summary>Tooltip of the server entry: which Ollama the dashboard drives or that none answers.</summary>
     private string ServerTooltip => StatusMonitor.Current switch
     {
         // The first probe has not answered yet.
@@ -93,7 +97,7 @@
         _ => "Ollama is offline"
     };
 
-    /// <summary>Tooltip of the account entry: who cloud requests are billed to, or that no account is linked.</summary>
+    /// <summary>Tooltip of the account entry: who cloud requests are billed to or that no account is linked.</summary>
     private string AccountTooltip => AccountMonitor.Current switch
     {
         // A linked account is named, so a wrong account is noticed at a glance.
@@ -104,6 +108,7 @@
         _ => "ollama.com account"
     };
 
+    /// <summary>Subscribes the header to the notifications that change its badges and its open entry.</summary>
     protected override void OnInitialized()
     {
         // The header badges follow the server status, the download queue and the linked account.
@@ -111,12 +116,14 @@
         PullManager.Changed += Rerender;
         AccountMonitor.Changed += Rerender;
 
-        // The outlined entry follows the page on screen, including links followed from inside a page.
+        // The white entry follows the page on screen, including links followed from inside a page.
         Navigation.LocationChanged += OnLocationChanged;
     }
 
-    /// <summary>Redraws the header when the page changes, so the outlined entry matches it.</summary>
-    private void OnLocationChanged(object? sender, LocationChangedEventArgs location) => Rerender();
+    /// <summary>Redraws the header when the page changes, so the white entry matches it.</summary>
+    private void OnLocationChanged(object? sender, LocationChangedEventArgs location) =>
+        // The new route decides which entry is white.
+        Rerender();
 
     /// <summary>Grows the Fluent colour ramp from the Ollamazing seed, always in dark mode.</summary>
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -127,15 +134,21 @@
 
         // The seed is not imposed as is: Fluent picks the shades of its ramp, so white text on brand surfaces stays readable.
         await ThemeService.SetThemeAsync(new ThemeSettings(BrandSeed, 0, 0, ThemeMode.Dark, false));
+
+        // The theme is in place: the page may be drawn now without a flash of default colours.
         isThemed = true;
         StateHasChanged();
     }
 
     /// <summary>Marshals a background notification onto the circuit dispatcher.</summary>
-    private void Rerender() => _ = InvokeAsync(StateHasChanged);
+    private void Rerender() =>
+        // The monitors raise their events on background threads while drawing belongs to the circuit.
+        _ = InvokeAsync(StateHasChanged);
 
+    /// <summary>Detaches the layout from the shared singletons when its circuit ends.</summary>
     public void Dispose()
     {
+        // The monitors outlive the circuit: a leftover handler would keep redrawing a closed layout.
         StatusMonitor.Changed -= Rerender;
         PullManager.Changed -= Rerender;
         AccountMonitor.Changed -= Rerender;

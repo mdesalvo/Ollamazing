@@ -18,12 +18,18 @@
 </FluentMessageBar>
 
 @code{
+    /// <summary>Context of the failed request, which supplies the trace identifier when no activity is current.</summary>
     [CascadingParameter]
     private HttpContext? HttpContext { get; set; }
 
+    /// <summary>Correlation identifier of the failed request, shown so the failure can be traced in the logs.</summary>
     private string? RequestId { get; set; }
+
+    /// <summary>True when an identifier exists, so the request line is shown only when it carries information.</summary>
     private bool ShowRequestId => !string.IsNullOrEmpty(RequestId);
 
+    /// <summary>Captures the identifier of the failed request when the page opens.</summary>
     protected override void OnInitialized() =>
+        // The distributed-trace activity ties the error to the logs of the whole call chain; the HTTP trace identifier is the fallback when no activity is running.
         RequestId = Activity.Current?.Id ?? HttpContext?.TraceIdentifier;
 }

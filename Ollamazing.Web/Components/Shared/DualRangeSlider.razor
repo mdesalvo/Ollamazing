@@ -14,13 +14,16 @@
     /// <summary>Index of the last step; the scale runs from 0 to this value.</summary>
     [Parameter, EditorRequired] public int MaxIndex { get; set; }
 
+    /// <summary>Step where the lower thumb sits.</summary>
     [Parameter] public int LowIndex { get; set; }
 
+    /// <summary>Step where the upper thumb sits.</summary>
     [Parameter] public int HighIndex { get; set; }
 
     /// <summary>Raised on every thumb movement with the new (low, high) pair, always ordered.</summary>
     [Parameter] public EventCallback<(int Low, int High)> RangeChanged { get; set; }
 
+    /// <summary>True when the slider ignores input.</summary>
     [Parameter] public bool Disabled { get; set; }
 
     /// <summary>Name of the range for assistive technologies, such as "Memory size".</summary>
@@ -29,29 +32,41 @@
     /// <summary>Spoken value of a step, such as "8 GB"; the bare index is read when absent.</summary>
     [Parameter] public Func<int, string>? StepLabel { get; set; }
 
-    /// <summary>True when both thumbs sit at the end of the scale, where only the lower one can still move.</summary>
-    private bool IsLowOnTop => LowIndex >= MaxIndex;
+    /// <summary>True when both thumbs sit at the end of the scale.</summary>
+    private bool IsLowOnTop =>
+        // At the end of the scale the lower thumb must be drawn above the upper one or it could not be grabbed.
+        LowIndex >= MaxIndex;
 
     /// <summary>Horizontal position of a step on the track, from 0 to 100.</summary>
-    private double Percent(int index) => MaxIndex == 0 ? 0 : index * 100.0 / MaxIndex;
+    private double Percent(int index) =>
+        // A single-step scale has no span to divide by: its only position is the start.
+        MaxIndex == 0 ? 0 : index * 100.0 / MaxIndex;
 
-    private string ValueText(int index) => StepLabel?.Invoke(index) ?? index.ToString();
+    /// <summary>Spoken value of a step for assistive technologies.</summary>
+    private string ValueText(int index) =>
+        // The caller's label gives the step its unit; the bare index is read when the caller supplies none.
+        StepLabel?.Invoke(index) ?? index.ToString();
 
-    /// <summary>Moves the lower bound; dragged past the upper one, it pushes the upper one along.</summary>
+    /// <summary>Moves the lower bound of the range to the step the thumb was dragged to.</summary>
     private Task OnLowInput(ChangeEventArgs change)
     {
+        // The step the lower thumb was dragged to.
         int lowIndex = ReadIndex(change);
+        // Dragging past the upper bound drags the upper bound along, so the pair stays ordered.
         return RangeChanged.InvokeAsync((lowIndex, Math.Max(lowIndex, HighIndex)));
     }
 
-    /// <summary>Moves the upper bound; dragged below the lower one, it pushes the lower one along.</summary>
+    /// <summary>Moves the upper bound of the range to the step the thumb was dragged to.</summary>
     private Task OnHighInput(ChangeEventArgs change)
     {
+        // The step the upper thumb was dragged to.
         int highIndex = ReadIndex(change);
+        // Dragging below the lower bound drags the lower bound along, so the pair stays ordered.
         return RangeChanged.InvokeAsync((Math.Min(LowIndex, highIndex), highIndex));
     }
 
     /// <summary>Step chosen by a thumb, kept inside the scale whatever the browser reports.</summary>
-    private int ReadIndex(ChangeEventArgs change)
-        => int.TryParse(change.Value?.ToString(), out int index) ? Math.Clamp(index, 0, MaxIndex) : 0;
+    private int ReadIndex(ChangeEventArgs change) =>
+        // A value the browser reports unparseable falls back to the start of the scale.
+        int.TryParse(change.Value?.ToString(), out int index) ? Math.Clamp(index, 0, MaxIndex) : 0;
 }

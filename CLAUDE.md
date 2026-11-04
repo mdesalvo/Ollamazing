@@ -41,5 +41,6 @@ dotnet run --project Ollamazing.Web          # http://localhost:5222
 - **Updates:** latest release from `api.github.com/repos/ollama/ollama/releases/latest` (User-Agent required). `UpdateCapabilityDetector` decides whether the installation can be updated in place or only notified, at the first failing check (macOS is notify-only). `OllamaUpdater` downloads the main archive plus the GPU archives already installed (`-rocm`, `-mlx`, `-jetpack*`), verifies them against the release `sha256sum.txt`, stages them in `<install root>/.ollamazing-update` (never in the system temp folder), swaps `bin` and `lib/ollama` by rename and restores the previous version when the new server does not answer.
 - **Shared state:** `CatalogService`, `PullManager`, `ServerStatusMonitor`, `AccountMonitor`, `OllamaUpdateMonitor`, `OllamaUpdater` are singletons with events; components inherit `LiveComponentBase` and use `Watch(...)`.
 - **Razor:** no double-quoted strings inside `@onclick="..."`.
-- **Languages:** this file, UI and comments in English; comments follow the `code-commentation` skill.
+- **Languages:** this file, UI and comments in English.
+- **Comments:** load the project skill `.claude/skills/code-commentation` before the first C# or Razor `@code` edit and follow it.
 - **Shell:** `rm`, `cp` and `mv` are interactive aliases, so use `/bin/rm -f`, `/bin/cp -f`, `/bin/mv -f`.

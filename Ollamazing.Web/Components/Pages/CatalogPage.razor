@@ -336,6 +336,7 @@
     /// <summary>Number of cards rendered per "show more" step, keeping each SignalR render diff small.</summary>
     private const int PageSize = 40;
 
+    /// <summary>Bytes in one gigabyte, decimal as ollama.com prints model sizes.</summary>
     private const double BytesPerGigabyte = 1e9;
 
     /// <summary>Steps of the price sliders in dollars per million tokens, covering the rates published on ollama.com.</summary>
@@ -365,6 +366,7 @@
 
         // The size tooltip puts the badge in figures, so the user sees how close to the limit the tag is.
         string hint = $"Needs about {memoryShare.ToString("P0", CultureInfo.InvariantCulture)} of the {Display.Bytes(MachineMemoryBytes)} of memory of this machine";
+        // The share of memory decides the verdict; anything above the whole memory is too large.
         return memoryShare switch
         {
             // Room is left for the context window and for everything else running.
@@ -376,11 +378,13 @@
         };
     }
 
+    /// <summary>Orderings the catalog list can take.</summary>
     private enum SortOrder { Popular, Newest, Downloads, Smallest, Name }
 
     /// <summary>Orders offered by the sort selector, most useful first.</summary>
     private static readonly SortOrder[] SortOrders = Enum.GetValues<SortOrder>();
 
+    /// <summary>Facet selections, search text and ranges chosen by the user.</summary>
     private readonly CatalogQuery query = new();
 
     /// <summary>Catalog snapshot of the current render, read by the filter controls.</summary>
@@ -388,8 +392,14 @@
 
     /// <summary>Facets built from <see cref="allModels"/> in the current render, read by the filter controls.</summary>
     private IReadOnlyList<Facet> facets = [];
+
+    /// <summary>Ordering chosen in the sort selector.</summary>
     private SortOrder sortOrder = SortOrder.Popular;
+
+    /// <summary>Slider position of the lower bound of the memory size range, as an index into <see cref="SizeStepsInGigabytes"/>.</summary>
     private int sizeLowIndex;
+
+    /// <summary>Slider position of the upper bound of the memory size range, as an index into <see cref="SizeStepsInGigabytes"/>.</summary>
     private int sizeHighIndex = SizeStepsInGigabytes.Length - 1;
 
     /// <summary>Slider positions of the input price range, as indexes into <see cref="PriceStepsInDollars"/>.</summary>
@@ -399,7 +409,11 @@
     /// <summary>Slider positions of the output price range, as indexes into <see cref="PriceStepsInDollars"/>.</summary>
     private int outputPriceLowIndex;
     private int outputPriceHighIndex = PriceStepsInDollars.Length - 1;
+
+    /// <summary>Number of cards currently rendered, raised by the "show more" button.</summary>
     private int visibleCount = PageSize;
+
+    /// <summary>Models whose tag table is open.</summary>
     private readonly HashSet<string> expandedModels = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Models whose "Use this model" snippets are open.</summary>
@@ -408,6 +422,7 @@
     /// <summary>Expanded models whose tag table ignores the filters, after the user asked to see every tag.</summary>
     private readonly HashSet<string> modelsShowingAllTags = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Subscribes the page to the notifications that change what it shows.</summary>
     protected override void OnInitialized()
     {
         // Catalog progress, download progress and the installed list all change what the page shows.
@@ -417,8 +432,11 @@
     }
 
     /// <summary>Full references of the installed models, used to flag tags already on the server.</summary>
-    private HashSet<string> InstalledNames => StatusMonitor.Current.LocalModels.Select(model => model.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    private HashSet<string> InstalledNames =>
+        // References are compared without case so a tag matches however it was typed.
+        StatusMonitor.Current.LocalModels.Select(model => model.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>One-line state of the catalog under the page title.</summary>
     private string CatalogStatusLine
     {
         get
@@ -427,6 +445,7 @@
             if (CatalogService.RefreshedAt is not { } refreshedAt)
                 return CatalogService.IsRefreshing ? "Reading the catalog from ollama.com…" : "Catalog not loaded yet";
 
+            // The base line gives size and age of the catalog; the counter measures how many models already have their sizes.
             string line = $"{CatalogService.Models.Count} models from ollama.com, refreshed {Display.Relative(refreshedAt)}";
             int modelsWithTags = CatalogService.ModelsWithTags;
 
@@ -476,12 +495,14 @@
         if (model.TagsLoadedAt is null)
             return model.OffersLocal ? "size loading…" : "cloud only";
 
+        // Download sizes of the local tags, which are the only ones with weights.
         List<long> sizes = model.LocalTags.Select(tag => tag.SizeBytes!.Value).ToList();
 
         // Cloud-only models have no downloadable weights.
         if (sizes.Count == 0)
             return "cloud only";
 
+        // A single size is shown alone; a spread is shown as the range between the smallest and the largest tag.
         long smallest = sizes.Min();
         long largest = sizes.Max();
         return smallest == largest ? Display.Bytes(smallest) : $"{Display.Bytes(smallest)} – {Display.Bytes(largest)}";
@@ -501,38 +522,54 @@
     };
 
     /// <summary>Badge text for installed tags, counting them when more than one is on the server.</summary>
-    private static string InstalledLabel(int installedCount) => installedCount > 1 ? $"installed ×{installedCount}" : "installed";
+    private static string InstalledLabel(int installedCount) =>
+        // The count is worth showing only when several tags of the model are installed.
+        installedCount > 1 ? $"installed ×{installedCount}" : "installed";
 
     /// <summary>Number of tags of a model already installed on the server.</summary>
-    private int InstalledTagCount(CatalogModel model)
-        => StatusMonitor.Current.LocalModels.Count(installed => installed.Name.StartsWith(model.Name + ":", StringComparison.OrdinalIgnoreCase));
+    private int InstalledTagCount(CatalogModel model) =>
+        // Installed references are "name:tag", so the prefix with the colon avoids matching models whose name merely starts the same.
+        StatusMonitor.Current.LocalModels.Count(installed => installed.Name.StartsWith(model.Name + ":", StringComparison.OrdinalIgnoreCase));
 
     /// <summary>Running download started from the card's quick button, if any.</summary>
-    private PullJob? FindActivePull(CatalogModel model)
-        => PullManager.FindActive(model.DefaultPullReference) ?? PullManager.FindActive(model.Name);
+    private PullJob? FindActivePull(CatalogModel model) =>
+        // The quick button pulls the default reference, but a pull started by the bare name counts too.
+        PullManager.FindActive(model.DefaultPullReference) ?? PullManager.FindActive(model.Name);
 
     /// <summary>Label of a slider step: sub-gigabyte steps in MB, the last one as unlimited.</summary>
     private static string SizeStepLabel(int index) => SizeStepsInGigabytes[index] switch
     {
+        // The last step means no limit.
         double.PositiveInfinity => "∞",
+        // The first step is the empty lower bound.
         0 => "0",
+        // Steps below one gigabyte read better in megabytes.
         < 1 and var gigabytes => $"{gigabytes * 1000:0} MB",
+        // Every other step is a whole number of gigabytes.
         var gigabytes => $"{gigabytes:0} GB"
     };
 
     /// <summary>Label of a price slider step: the last one as unlimited.</summary>
-    private static string PriceStepLabel(int index)
-        => double.IsPositiveInfinity(PriceStepsInDollars[index]) ? "∞" : Display.Price((decimal)PriceStepsInDollars[index]);
+    private static string PriceStepLabel(int index) =>
+        // The unbounded step carries no price.
+        double.IsPositiveInfinity(PriceStepsInDollars[index]) ? "∞" : Display.Price((decimal)PriceStepsInDollars[index]);
 
     /// <summary>Price in dollars of a slider step; the last step means no upper bound.</summary>
-    private static decimal PriceStepValue(int index)
-        => double.IsPositiveInfinity(PriceStepsInDollars[index]) ? decimal.MaxValue : (decimal)PriceStepsInDollars[index];
+    private static decimal PriceStepValue(int index) =>
+        // The unbounded step becomes the largest decimal so no model is excluded by its rates.
+        double.IsPositiveInfinity(PriceStepsInDollars[index]) ? decimal.MaxValue : (decimal)PriceStepsInDollars[index];
 
-    private void ResetPaging() => visibleCount = PageSize;
+    /// <summary>Returns the list to its first page of cards.</summary>
+    private void ResetPaging() =>
+        // A changed filter or order makes the previous scroll depth meaningless.
+        visibleCount = PageSize;
 
+    /// <summary>Flips one option of a facet in the query and restarts paging.</summary>
     private void ToggleOption(Facet facet, FacetOption option)
     {
+        // The option joins or leaves the selection of its facet.
         query.Toggle(facet.Key, option.Key);
+        // The result list changed, so it restarts from its first page.
         ResetPaging();
     }
 
@@ -544,14 +581,18 @@
         ResetPaging();
     }
 
+    /// <summary>Applies the text typed in the search box to the query and restarts paging.</summary>
     private void SetSearchText(string? searchText)
     {
+        // Surrounding blanks never belong to a model name; an empty box means no text filter.
         query.SearchText = searchText?.Trim() ?? "";
         ResetPaging();
     }
 
+    /// <summary>Applies the ordering chosen in the selector and restarts paging.</summary>
     private void ChangeSortOrder(SortOrder order)
     {
+        // The list is re-sorted at the next render.
         sortOrder = order;
         ResetPaging();
     }
@@ -574,7 +615,10 @@
     /// <summary>Applies a slider movement to the query; the last step of the scale removes the upper bound.</summary>
     private void SetSizeRange((int Low, int High) range)
     {
+        // The sliders keep the chosen positions so they stay where the user left them.
         (sizeLowIndex, sizeHighIndex) = range;
+
+        // The lower bound converts the step to bytes; the last step of the scale means no upper bound.
         query.MinSizeBytes = (long)(SizeStepsInGigabytes[sizeLowIndex] * BytesPerGigabyte);
         query.MaxSizeBytes = double.IsPositiveInfinity(SizeStepsInGigabytes[sizeHighIndex])
             ? long.MaxValue
@@ -582,11 +626,15 @@
         ResetPaging();
     }
 
-    private void ResetSizeRange() => SetSizeRange((0, SizeStepsInGigabytes.Length - 1));
+    /// <summary>Opens the memory size range to the whole scale.</summary>
+    private void ResetSizeRange() =>
+        // The full scale from the first to the last step filters nothing out.
+        SetSizeRange((0, SizeStepsInGigabytes.Length - 1));
 
     /// <summary>Applies a movement of the input price slider to the query; the last step removes the upper bound.</summary>
     private void SetInputPriceRange((int Low, int High) range)
     {
+        // The sliders keep the chosen positions; the query receives the dollar value of each step.
         (inputPriceLowIndex, inputPriceHighIndex) = range;
         query.MinInputPrice = PriceStepValue(inputPriceLowIndex);
         query.MaxInputPrice = PriceStepValue(inputPriceHighIndex);
@@ -596,6 +644,7 @@
     /// <summary>Applies a movement of the output price slider to the query; the last step removes the upper bound.</summary>
     private void SetOutputPriceRange((int Low, int High) range)
     {
+        // The sliders keep the chosen positions; the query receives the dollar value of each step.
         (outputPriceLowIndex, outputPriceHighIndex) = range;
         query.MinOutputPrice = PriceStepValue(outputPriceLowIndex);
         query.MaxOutputPrice = PriceStepValue(outputPriceHighIndex);
@@ -605,6 +654,7 @@
     /// <summary>Opens both price ranges, so models are no longer filtered by their rates.</summary>
     private void ResetPriceRanges()
     {
+        // Both sliders return to the full scale, which filters nothing out.
         SetInputPriceRange((0, PriceStepsInDollars.Length - 1));
         SetOutputPriceRange((0, PriceStepsInDollars.Length - 1));
     }
@@ -615,11 +665,15 @@
         // The last finite step not exceeding the physical memory becomes the upper bound.
         double memoryInGigabytes = MachineMemoryBytes / BytesPerGigabyte;
         int fittingIndex = Array.FindLastIndex(SizeStepsInGigabytes, step => step <= memoryInGigabytes);
+
+        // The index never drops below the second step, so a machine smaller than every step still leaves a non-empty range.
         SetSizeRange((0, Math.Max(fittingIndex, 1)));
     }
 
+    /// <summary>Removes every selection, the search text and both kinds of range.</summary>
     private void ClearAllFilters()
     {
+        // Facet selections and search text are emptied; the ranges are opened to their whole scales.
         query.ClearSelections();
         query.SearchText = "";
         ResetSizeRange();
@@ -627,7 +681,9 @@
     }
 
     /// <summary>A count of tags with the noun agreeing, as in "1 tag" or "8 tags".</summary>
-    private static string TagCount(int count) => count == 1 ? "1 tag" : $"{count} tags";
+    private static string TagCount(int count) =>
+        // Only one takes the singular noun.
+        count == 1 ? "1 tag" : $"{count} tags";
 
     /// <summary>Opens or closes the "Use this model" snippets of a model.</summary>
     private void ToggleUsage(CatalogModel model)
@@ -638,7 +694,9 @@
     }
 
     /// <summary>True when the model computes embeddings instead of generating text.</summary>
-    private static bool IsEmbedding(CatalogModel model) => model.Capabilities.Contains("embedding", StringComparer.OrdinalIgnoreCase);
+    private static bool IsEmbedding(CatalogModel model) =>
+        // Ollama announces embedding models through their capability list.
+        model.Capabilities.Contains("embedding", StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Opens or closes the tag table, loading the tags page on demand when the background load has not reached it.</summary>
     private async Task ToggleExpandedAsync(CatalogModel model)
@@ -649,6 +707,8 @@
             expandedModels.Remove(model.Name);
             return;
         }
+
+        // Opening needs the tag table, which is read now if the background load has not reached this model.
         await CatalogService.EnsureTagsAsync(model.Name);
     }
 
@@ -657,10 +717,14 @@
     {
         // The default reference depends on the tags, which may not be loaded yet for this model.
         await CatalogService.EnsureTagsAsync(model.Name);
+        // The model as it is after loading, because the tags change which reference is the default.
         CatalogModel currentModel = CatalogService.Models.FirstOrDefault(candidate => candidate.Name == model.Name) ?? model;
+        // The download is queued under the default reference.
         PullManager.StartPull(currentModel.DefaultPullReference);
     }
 
     /// <summary>Starts a catalog refresh detached from this circuit; progress reaches every open page through change events.</summary>
-    private void RefreshCatalog() => _ = Task.Run(() => CatalogService.RefreshAsync());
+    private void RefreshCatalog() =>
+        // The refresh outlives the circuit of the click, so it does not stop when the user leaves the page.
+        _ = Task.Run(() => CatalogService.RefreshAsync());
 }

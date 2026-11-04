@@ -16,11 +16,17 @@ public sealed record Facet(string Key, string Title, IReadOnlyList<FacetOption> 
 /// </remarks>
 public sealed class CatalogQuery
 {
+    /// <summary>Key of the facet separating local weights from cloud offerings.</summary>
     public const string ClassFacetKey = "class";
+    /// <summary>Key of the facet separating free options from paid ones.</summary>
     public const string PricingFacetKey = "pricing";
+    /// <summary>Key of the facet listing the capability badges found in the catalog.</summary>
     public const string CapabilityFacetKey = "capability";
+    /// <summary>Key of the facet grouping models by parameter count.</summary>
     public const string ParametersFacetKey = "parameters";
+    /// <summary>Key of the class option for models with downloadable weights.</summary>
     public const string LocalOptionKey = "local";
+    /// <summary>Key of the class option for models offered on the ollama.com cloud.</summary>
     public const string CloudOptionKey = "cloud";
 
     /// <summary>Parameter count bands in billions, lower bound inclusive and upper bound exclusive.</summary>
@@ -33,6 +39,7 @@ public sealed class CatalogQuery
         ("over-100b", "Over 100B", 101, double.MaxValue)
     ];
 
+    /// <summary>Selected option keys grouped by facet key.</summary>
     private readonly Dictionary<string, HashSet<string>> selectedOptions = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Free text matched against name and description; empty means no constraint.</summary>
@@ -44,6 +51,7 @@ public sealed class CatalogQuery
     /// <summary>Upper bound of the memory size range in bytes; <see cref="long.MaxValue"/> means no upper bound.</summary>
     public long MaxSizeBytes { get; set; } = long.MaxValue;
 
+    /// <summary>True when the memory size range is narrower than the whole catalog.</summary>
     public bool IsSizeRangeActive => MinSizeBytes > 0 || MaxSizeBytes < long.MaxValue;
 
     /// <summary>Lower bound of the input rate in dollars per million tokens; zero means no lower bound.</summary>
@@ -67,14 +75,16 @@ public sealed class CatalogQuery
     /// <summary>True when the selection is restricted to local weights, where token rates have no meaning.</summary>
     public bool IsLocalOnly => SelectedOf(ClassFacetKey) is { Count: 1 } classSelection && classSelection.Contains(LocalOptionKey);
 
+    /// <summary>True when at least one option of any facet is selected.</summary>
     public bool HasSelections => selectedOptions.Values.Any(options => options.Count > 0);
 
     /// <summary>Number of selected options across all facets, shown on the collapsed filter panel.</summary>
     public int SelectionCount => selectedOptions.Values.Sum(options => options.Count);
 
+    /// <summary>True when the given option of the given facet is selected.</summary>
     public bool IsSelected(string facetKey, string optionKey) => SelectedOf(facetKey)?.Contains(optionKey) == true;
 
-    /// <summary>Selects an option, or deselects it when already selected.</summary>
+    /// <summary>Toggles the selection of an option.</summary>
     public void Toggle(string facetKey, string optionKey)
     {
         // Facets get their selection set on first use.
@@ -86,6 +96,7 @@ public sealed class CatalogQuery
             facetSelection.Add(optionKey);
     }
 
+    /// <summary>Drops the selected options of every facet.</summary>
     public void ClearSelections() => selectedOptions.Clear();
 
     /// <summary>True when at least one option of the facet is selected.</summary>
@@ -108,6 +119,7 @@ public sealed class CatalogQuery
             .Select(capability => new FacetOption(capability, capability, model => model.Capabilities.Contains(capability, StringComparer.OrdinalIgnoreCase)))
             .ToList();
 
+        // The facets are listed in the order the filter panel shows them.
         return
         [
             new Facet(ClassFacetKey, "Class", [
@@ -154,16 +166,21 @@ public sealed class CatalogQuery
 
         // Mixture-of-experts badges multiply the expert count by the expert size.
         double expertCount = sizeMatch.Groups[1].Success ? double.Parse(sizeMatch.Groups[1].Value, CultureInfo.InvariantCulture) : 1;
+        // The number printed in the badge, before the unit letter.
         double amount = double.Parse(sizeMatch.Groups[2].Value, CultureInfo.InvariantCulture);
+
+        // The unit letter scales the number: "m" is millions and "t" is trillions while any other suffix is already billions.
         double unitInBillions = char.ToLowerInvariant(sizeMatch.Groups[3].Value[0]) switch
         {
             'm' => 0.001,
             't' => 1000,
             _ => 1
         };
+        // The total parameter count in billions, which the bands are expressed in.
         return expertCount * amount * unitInBillions;
     }
 
+    /// <summary>Selected option keys of one facet, null when the facet was never touched.</summary>
     private HashSet<string>? SelectedOf(string facetKey) => selectedOptions.GetValueOrDefault(facetKey);
 
     /// <summary>Options of the same facet are alternatives: one matching option is enough.</summary>
@@ -174,9 +191,11 @@ public sealed class CatalogQuery
         if (facetSelection is not { Count: > 0 })
             return true;
 
+        // One selected option that the model carries is enough, as options of a facet are alternatives.
         return facet.Options.Any(option => facetSelection.Contains(option.Key) && option.Matches(model));
     }
 
+    /// <summary>True when the search text is empty or appears in the name or the description.</summary>
     private bool MatchesText(CatalogModel model)
         => SearchText.Length == 0
            || model.Name.Contains(SearchText, StringComparison.OrdinalIgnoreCase)
@@ -185,7 +204,7 @@ public sealed class CatalogQuery
     /// <summary>A model matches the size range when at least one of its downloadable tags falls inside it.</summary>
     private bool MatchesSizeRange(CatalogModel model)
     {
-        // An open range, or a cloud-only selection, does not constrain size.
+        // An open range does not constrain size and neither does a cloud-only selection.
         if (!IsSizeRangeActive || IsCloudOnly)
             return true;
 
@@ -193,7 +212,7 @@ public sealed class CatalogQuery
         return model.TagsLoadedAt is not null && model.LocalTags.Any(IsInSizeRange);
     }
 
-    /// <summary>A model matches the price ranges when its cheapest standard rates fall inside both; an open range does not constrain.</summary>
+    /// <summary>True when the cheapest standard rates of the model fall inside both price ranges.</summary>
     private bool MatchesPriceRange(CatalogModel model)
     {
         // Open ranges let every model through, priced or not; a local-only selection ignores the price ranges, as a cloud-only one ignores the size range.
@@ -202,12 +221,16 @@ public sealed class CatalogQuery
 
         // Only the standard rates count: off-peak discounts apply to part of the day only.
         List<CatalogPrice> standardPrices = model.Prices.Where(price => !price.IsOffPeak).ToList();
+
+        // A model without published standard rates cannot satisfy an active price range.
         if (standardPrices.Count == 0)
             return false;
 
         // A missing rate means that side is not billed, as for the output of embedding models.
         decimal inputRate = standardPrices.Min(price => price.Input ?? 0);
         decimal outputRate = standardPrices.Min(price => price.Output ?? 0);
+
+        // Both sides of the rate must sit inside their own range.
         return inputRate >= MinInputPrice && inputRate <= MaxInputPrice
             && outputRate >= MinOutputPrice && outputRate <= MaxOutputPrice;
     }

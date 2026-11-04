@@ -13,6 +13,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
     /// <summary>Badges that describe the offering rather than a capability of the model.</summary>
     private static readonly HashSet<string> OfferingBadges = new(StringComparer.OrdinalIgnoreCase) { "cloud", "free" };
 
+    /// <summary>Parser that turns the downloaded pages into queryable documents.</summary>
     private readonly HtmlParser htmlParser = new();
 
     /// <summary>Walks every search results page and returns the catalog in popularity order, without tags.</summary>
@@ -26,11 +27,13 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             // Only the htmx fragment honours the page parameter: a plain request always serves page one.
             using HttpRequestMessage request = new(HttpMethod.Get, $"{options.Value.BaseUrl}/search?page={pageNumber}");
             request.Headers.Add("HX-Request", "true");
+
+            // A failed page aborts the whole refresh so that a partial list never replaces the stored catalog.
             using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();
             string html = await response.Content.ReadAsStringAsync(cancellationToken);
 
-            // A page with no new model marks the end of the catalog.
+            // Ranks continue from the models already collected so that the order spans all pages.
             IReadOnlyList<CatalogModel> pageModels = ParseSearchPage(html, modelsByName.Count);
             int newModelCount = 0;
             foreach (CatalogModel pageModel in pageModels)
@@ -39,6 +42,8 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
                 if (modelsByName.TryAdd(pageModel.Name, pageModel))
                     newModelCount++;
             }
+
+            // A page with no new model marks the end of the catalog.
             if (newModelCount == 0)
                 break;
         }
@@ -55,6 +60,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
         // The tags page is a full HTML document; no htmx header is needed here.
         string html = await httpClient.GetStringAsync($"{options.Value.BaseUrl}/library/{Uri.EscapeDataString(modelName)}/tags", cancellationToken);
 
+        // The page lists every pullable tag of the model with its size.
         return ParseTagsPage(html, modelName);
     }
 
@@ -64,15 +70,20 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
         // The pricing page is a full HTML document, like the tags pages.
         string html = await httpClient.GetStringAsync($"{options.Value.BaseUrl}/pricing", cancellationToken);
 
+        // The table lists the cloud rates of every priced model.
         CatalogPricing pricing = ParsePricingPage(html);
         logger.LogInformation("Cloud pricing read: {ModelCount} priced models", pricing.PricesByModel.Count);
+        // The caller merges these rates into the models of the catalog.
         return pricing;
     }
 
     /// <summary>Turns one search results fragment into catalog models, ranking them after <paramref name="rankOffset"/>.</summary>
     private IReadOnlyList<CatalogModel> ParseSearchPage(string html, int rankOffset)
     {
+        // The HTMX fragment of one search page holds the result items of that page.
         IDocument document = htmlParser.ParseDocument(html);
+
+        // Results are collected in page order, which is the popularity order.
         List<CatalogModel> models = [];
 
         // Each result is a list item wrapping a single link to the library page of the model.
@@ -81,6 +92,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             // Items without a library link belong to menus and filters, not to results.
             IElement? modelLink = listItem.QuerySelector("a[href^='/library/']");
             if (modelLink is null)
+                // Menu and filter items are skipped.
                 continue;
 
             // The library path is the canonical pull name of the model.
@@ -100,6 +112,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             // Download counters are present only on models with pullable weights.
             string? downloadsTitle = listItem.QuerySelector("span[title$=' downloads']")?.GetAttribute("title");
 
+            // Everything read from the item becomes one catalog entry, ranked after the models already collected.
             models.Add(new CatalogModel
             {
                 Name = name,
@@ -116,14 +129,20 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             });
         }
 
+        // The models of this page are handed to the caller, which ranks and deduplicates them.
         return models;
     }
 
     /// <summary>Extracts the tag rows of a tags page from their compact (mobile) rendering, which carries all fields in one line.</summary>
     private IReadOnlyList<CatalogTag> ParseTagsPage(string html, string modelName)
     {
+        // The tags page of one model holds every pullable tag with its size and metadata.
         IDocument document = htmlParser.ParseDocument(html);
+
+        // Tags are keyed by reference because each tag appears in two renderings.
         Dictionary<string, CatalogTag> tagsByName = new(StringComparer.OrdinalIgnoreCase);
+
+        // Every tag link of this model starts with the model name followed by a colon.
         string tagLinkPrefix = $"/library/{modelName}:";
 
         // Each tag is rendered twice; only the compact link contains the digest span with the metadata line.
@@ -144,6 +163,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             // The "latest" pill marks the tag a bare model name resolves to.
             bool isLatest = tagLink.QuerySelectorAll("span.rounded-full").Any(pill => pill.TextContent.Trim() == "latest");
 
+            // Each field is picked by its shape because columns vary: cloud tags have no size and some tags no context window.
             tagsByName.TryAdd(fullName, new CatalogTag
             {
                 FullName = fullName,
@@ -155,13 +175,17 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             });
         }
 
+        // The tags are handed over in the order the page lists them.
         return tagsByName.Values.ToList();
     }
 
     /// <summary>Extracts the rows of the "Model pricing" table, grouping them by the library model they link to.</summary>
     private CatalogPricing ParsePricingPage(string html)
     {
+        // The pricing page holds the table of cloud rates.
         IDocument document = htmlParser.ParseDocument(html);
+
+        // Rates are grouped by the library name of the model they belong to.
         Dictionary<string, List<CatalogPrice>> pricesByModel = new(StringComparer.OrdinalIgnoreCase);
 
         // A redesign that drops the section leaves every model unpriced instead of failing the refresh.
@@ -171,6 +195,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
 
         // The paragraph above the table explains the unit and when the off-peak rates apply.
         string? note = pricingSection.QuerySelector("p")?.TextContent;
+        // Line breaks and indentation of the markup are collapsed into single spaces.
         note = note is null ? null : string.Join(' ', note.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
 
         // Each row reads "model link • input • cached input • output".
@@ -189,6 +214,8 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             // Rows of the same model are kept in table order: peak before off-peak, larger variant first.
             if (!pricesByModel.TryGetValue(modelName, out List<CatalogPrice>? modelPrices))
                 pricesByModel[modelName] = modelPrices = [];
+
+            // The row becomes one rate of the model, with the variant and the off-peak marker taken from the label.
             modelPrices.Add(new CatalogPrice
             {
                 Variant = labelMatch.Groups[1].Success ? labelMatch.Groups[1].Value : null,
@@ -199,6 +226,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             });
         }
 
+        // The rates are handed over as read-only lists, looked up by model name regardless of case.
         return new CatalogPricing(note, pricesByModel.ToDictionary(
             entry => entry.Key,
             entry => (IReadOnlyList<CatalogPrice>)entry.Value,
@@ -215,6 +243,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
     private static long? ParseSize(string label)
     {
         // A size range keeps its upper bound, which is what the largest variant needs in memory.
+        // Ranges are printed as "lower - upper".
         string[] rangeBounds = label.Split(" - ", StringSplitOptions.TrimEntries);
         if (rangeBounds.Length == 2)
             return ParseSize(rangeBounds[1]);
@@ -226,6 +255,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
 
         // The multiplier follows the unit suffix; ollama.com uses powers of 1000.
         double value = double.Parse(sizeMatch.Groups[1].Value, CultureInfo.InvariantCulture);
+        // The unit suffix is matched without case; a bare "B" is already in bytes.
         double multiplier = sizeMatch.Groups[2].Value.ToUpperInvariant() switch
         {
             "KB" => 1e3,
@@ -234,6 +264,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
             "TB" => 1e12,
             _ => 1
         };
+        // Fractional bytes from the rounded label are dropped.
         return (long)(value * multiplier);
     }
 
@@ -246,6 +277,7 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
 
         // Thousands separators are stripped before parsing the leading number.
         string digits = new(title.TakeWhile(character => character != ' ').Where(char.IsDigit).ToArray());
+        // An unparsable counter leaves the downloads unknown.
         return long.TryParse(digits, out long downloads) ? downloads : null;
     }
 
@@ -255,11 +287,14 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
         // Missing or reformatted titles leave the update date unknown instead of failing the whole page.
         if (title is null)
             return null;
+
+        // The date follows the "Updated " prefix in the month-name format used by ollama.com.
         return DateOnly.TryParseExact(title["Updated ".Length..], "MMMM d, yyyy", CultureInfo.InvariantCulture, DateTimeStyles.None, out DateOnly updatedOn)
             ? updatedOn
             : null;
     }
 
+    /// <summary>Size label of a tag: a decimal number followed by a byte unit.</summary>
     [GeneratedRegex(@"^(\d+(?:\.\d+)?)\s*(B|KB|MB|GB|TB)$", RegexOptions.IgnoreCase)]
     private static partial Regex SizePattern();
 
@@ -273,9 +308,11 @@ public sealed partial class OllamaCatalogScraper(HttpClient httpClient, IOptions
     [GeneratedRegex(@"^[^:\s(]+(?::(\S+))?\s*(\(off-peak\))?$", RegexOptions.IgnoreCase)]
     private static partial Regex PricingLabelPattern();
 
+    /// <summary>Context window label of a tag metadata line, such as "128K context window".</summary>
     [GeneratedRegex(@"^(\S+)\s+context window$", RegexOptions.IgnoreCase)]
     private static partial Regex ContextWindowPattern();
 
+    /// <summary>Input modalities label of a tag metadata line, such as "Text, Image input".</summary>
     [GeneratedRegex(@"^(.+?)\s+input$", RegexOptions.IgnoreCase)]
     private static partial Regex InputsPattern();
 }

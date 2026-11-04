@@ -221,29 +221,40 @@ else
     /// <summary>True while the page checks for the approval, which it does as long as the pairing screen is open.</summary>
     private bool isWaitingForApproval;
 
+    /// <summary>True when the approval deadline passed without a link, so the page offers to resume the checks.</summary>
     private bool hasPairingTimedOut;
 
     /// <summary>True after a link approved while this page was waiting, to confirm the outcome above the account details.</summary>
     private bool hasJustPaired;
 
-    /// <summary>A second click is required because signing out revokes the server key on ollama.com and stops every cloud model.</summary>
+    /// <summary>True while the sign out waits for the click that confirms it.</summary>
     private bool isConfirmingSignOut;
 
+    /// <summary>True while the server is being unlinked, so the sign out cannot be sent twice.</summary>
     private bool isSigningOut;
 
     /// <summary>Failure of a user action (sign out), shown at the top of the page.</summary>
     private string? actionError;
 
+    /// <summary>Credits of the linked account, null until they are read.</summary>
     private BalanceResponse? balance;
+
+    /// <summary>Usage of the linked account over the selected range, null until it is read.</summary>
     private UsageResponse? usage;
+
+    /// <summary>Range of the usage table, one of the values accepted by ollama.com.</summary>
     private string usageRange = "7d";
+
+    /// <summary>True while credits and usage are being read.</summary>
     private bool isLoadingAccountData;
+
+    /// <summary>Failure of the last read of credits and usage, shown in place of the figures.</summary>
     private string? accountDataError;
 
     /// <summary>Account whose credits and usage are on screen, so a different account triggers a fresh load.</summary>
     private string? loadedAccountId;
 
-    /// <summary>Remaining plan allowance over the whole allowance of the period, as in "$0.00 of $0.00"; "Not included" for a plan without one.</summary>
+    /// <summary>Remaining plan allowance over the whole allowance of the period or "Not included" for a plan without one.</summary>
     private string AllowanceSummary => balance?.Included switch
     {
         // A plan that grants nothing has no allowance to count down.
@@ -254,7 +265,7 @@ else
         _ => "–"
     };
 
-    /// <summary>Caption under the plan allowance: the renewal date, or why there is no allowance.</summary>
+    /// <summary>Caption under the plan allowance: the renewal date or why there is no allowance.</summary>
     private string AllowanceDetail => balance?.Included switch
     {
         // A plan that grants nothing says so instead of promising a renewal.
@@ -265,11 +276,13 @@ else
         _ => "left in this period"
     };
 
+    /// <summary>Subscribes the page to account and server changes and syncs it with the current account.</summary>
     protected override async Task OnInitializedAsync()
     {
         // Account and server status both decide which screen is shown.
         Watch(handler => AccountMonitor.Changed += handler, handler => AccountMonitor.Changed -= handler);
         Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
+        // A new account must also load or drop the credits, which a plain redraw would not do.
         AccountMonitor.Changed += OnAccountChanged;
 
         // A page opened before any check asks right away instead of waiting for the next server restart.
@@ -280,16 +293,22 @@ else
         await SyncWithAccountAsync();
     }
 
+    /// <summary>Detaches the page from the shared account monitor and stops the approval polling.</summary>
     public override void Dispose()
     {
+        // The monitor outlives the page: a leftover handler would keep loading credits for a closed page.
         AccountMonitor.Changed -= OnAccountChanged;
+
+        // A wait still running would keep polling the server on behalf of a page nobody sees.
         pairingCancellation?.Cancel();
         pairingCancellation?.Dispose();
         base.Dispose();
     }
 
     /// <summary>Follows account changes made anywhere, such as an approval detected by the polling or a sign-out in another tab.</summary>
-    private void OnAccountChanged() => _ = InvokeAsync(SyncWithAccountAsync);
+    private void OnAccountChanged() =>
+        // The monitor raises its event on a background thread while page state belongs to the circuit.
+        _ = InvokeAsync(SyncWithAccountAsync);
 
     /// <summary>Loads the credits of a newly linked account, drops those of an account no longer linked and waits for an approval.</summary>
     private async Task SyncWithAccountAsync()
@@ -298,12 +317,14 @@ else
         if (AccountMonitor.Current is { IsSignedIn: false } && !isWaitingForApproval && !hasPairingTimedOut)
             _ = InvokeAsync(WaitForApprovalAsync);
 
+        // Identity of the linked account, null when none is linked or the first check has not run.
         string? accountId = AccountMonitor.Current?.User?.Id;
 
         // An unchanged account keeps the figures already on screen.
         if (accountId == loadedAccountId)
             return;
 
+        // The figures of the previous account must never appear under another one.
         loadedAccountId = accountId;
         balance = null;
         usage = null;
@@ -316,12 +337,14 @@ else
             return;
         }
 
+        // A linked account gets its credits and usage read.
         await LoadAccountDataAsync();
     }
 
     /// <summary>Reads balance and usage of the linked account in parallel.</summary>
     private async Task LoadAccountDataAsync()
     {
+        // The loading state replaces the earlier figures and errors before the request goes out.
         isLoadingAccountData = true;
         accountDataError = null;
         StateHasChanged();
@@ -340,8 +363,10 @@ else
         }
         finally
         {
+            // The loading state ends whatever the outcome.
             isLoadingAccountData = false;
         }
+        // The figures or the failure are drawn.
         StateHasChanged();
     }
 
@@ -351,13 +376,15 @@ else
         // Only the ranges ollama.com accepts are applied.
         if (range is null || !UsageRanges.Contains(range))
             return;
+        // The table is read again for the new range.
         usageRange = range;
         await LoadAccountDataAsync();
     }
 
-    /// <summary>Usage rows ordered by cost, then by number of requests, so the models that spend the credits come first.</summary>
-    private static IQueryable<ModelUsage> UsageByModel(UsageTotals usageTotals)
-        => usageTotals.Groups.OrderByDescending(group => group.UsageUsd).ThenByDescending(group => group.RequestCount).AsQueryable();
+    /// <summary>Orders the usage rows by cost and then by number of requests.</summary>
+    private static IQueryable<ModelUsage> UsageByModel(UsageTotals usageTotals) =>
+        // The models that spend the credits come first; equal costs fall back to the busiest one.
+        usageTotals.Groups.OrderByDescending(group => group.UsageUsd).ThenByDescending(group => group.RequestCount).AsQueryable();
 
     /// <summary>Polls the server until the account is linked, the deadline passes or the user leaves the page.</summary>
     private async Task WaitForApprovalAsync()
@@ -377,6 +404,7 @@ else
             using PeriodicTimer pollTimer = new(PairingPollInterval);
             while (await pollTimer.WaitForNextTickAsync(pairingToken))
             {
+                // Each tick asks the server whether the link has been approved.
                 await AccountMonitor.RefreshAsync(pairingToken);
 
                 // The approval ends the wait; the account details replace the pairing screen.
@@ -394,29 +422,44 @@ else
         }
         finally
         {
+            // The waiting indicator disappears whatever ended the wait.
             isWaitingForApproval = false;
             StateHasChanged();
         }
     }
 
     /// <summary>Resumes the checks after the deadline, for an approval that took longer than expected.</summary>
-    private Task WaitForApprovalAgain() => WaitForApprovalAsync();
+    private Task WaitForApprovalAgain() =>
+        // The new wait starts with a fresh deadline.
+        WaitForApprovalAsync();
 
     /// <summary>Asks the server for the account again after ollama.com could not be reached.</summary>
-    private Task RetryAccountCheckAsync() => AccountMonitor.RefreshAsync();
+    private Task RetryAccountCheckAsync() =>
+        // The monitor publishes the outcome to every circuit.
+        AccountMonitor.RefreshAsync();
 
-    private void AskSignOut() => isConfirmingSignOut = true;
+    /// <summary>Asks the user to confirm the sign out.</summary>
+    private void AskSignOut() =>
+        // Signing out revokes the server key on ollama.com and stops every cloud model, so it takes a second click.
+        isConfirmingSignOut = true;
 
-    private void CancelSignOut() => isConfirmingSignOut = false;
+    /// <summary>Withdraws the sign out confirmation.</summary>
+    private void CancelSignOut() =>
+        // The user changed their mind: the account stays linked.
+        isConfirmingSignOut = false;
 
     /// <summary>Unlinks the account after confirmation; the pairing screen comes back with a fresh link.</summary>
     private async Task SignOutAsync()
     {
+        // The busy state starts and the previous failure disappears.
         isSigningOut = true;
         actionError = null;
         try
         {
+            // The server unlinks the account and the monitor publishes the change.
             await AccountMonitor.SignOutAsync();
+
+            // The next link is a new pairing, so the confirmation of the previous one is dropped.
             hasJustPaired = false;
         }
         catch (Exception signOutError) when (signOutError is HttpRequestException or TaskCanceledException)
@@ -426,19 +469,23 @@ else
         }
         finally
         {
+            // The sign out is over and its confirmation is spent.
             isSigningOut = false;
             isConfirmingSignOut = false;
         }
     }
 
-    /// <summary>Avatar address when served over HTTPS; anything else is dropped, so the profile picture cannot downgrade the page.</summary>
-    private static string? SecureImage(string? imageUrl)
-        => Uri.TryCreate(imageUrl, UriKind.Absolute, out Uri? imageUri) && imageUri.Scheme == Uri.UriSchemeHttps ? imageUrl : null;
+    /// <summary>Avatar address when served over HTTPS, otherwise null.</summary>
+    private static string? SecureImage(string? imageUrl) =>
+        // A plain-HTTP picture is dropped so the profile image cannot downgrade the page.
+        Uri.TryCreate(imageUrl, UriKind.Absolute, out Uri? imageUri) && imageUri.Scheme == Uri.UriSchemeHttps ? imageUrl : null;
 
     /// <summary>Full name from the profile, falling back to the user name when the profile has none.</summary>
     private static string DisplayName(UserResponse user)
     {
+        // The profile name as the user entered it.
         string fullName = $"{user.FirstName} {user.LastName}".Trim();
+        // Accounts without a profile name are still identified by their user name.
         return fullName.Length > 0 ? fullName : user.Name ?? "ollama.com user";
     }
 
@@ -447,8 +494,9 @@ else
     {
         // The hourly range reads better in hours.
         "24h" => "24 hours",
-        // The daily ranges keep their day count.
+        // A week keeps its day count.
         "7d" => "7 days",
+        // A month keeps its day count too.
         "30d" => "30 days",
         // An unknown range is shown as ollama.com names it.
         _ => range

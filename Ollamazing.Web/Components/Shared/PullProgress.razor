@@ -7,16 +7,21 @@
 </FluentStack>
 
 @code {
+    /// <summary>The running download whose progress is shown.</summary>
     [Parameter, EditorRequired] public PullJob Job { get; set; } = null!;
 
     /// <summary>Byte counts exist only while a layer downloads; manifest and verification steps have none.</summary>
     private bool HasByteCounts => Job.LastProgress is { Total: > 0 };
 
-    /// <summary>Whole percentage of the current layer; null leaves the bar indeterminate.</summary>
-    private int? PercentDone => HasByteCounts ? (int)Math.Round(Job.LastProgress!.Percent) : null;
+    /// <summary>Whole percentage of the current layer or null while no layer downloads.</summary>
+    private int? PercentDone =>
+        // Without byte counts there is nothing to measure: null makes the bar run indeterminate.
+        HasByteCounts ? (int)Math.Round(Job.LastProgress!.Percent) : null;
 
-    /// <summary>Percentage of the current layer, or the status line while no layer is downloading.</summary>
-    private string Label => HasByteCounts
-        ? $"{Job.LastProgress!.Percent:0}%"
-        : Job.LastProgress?.Status ?? "starting";
+    /// <summary>Percentage of the current layer or the status line while no layer is downloading.</summary>
+    private string Label =>
+        // Percentages exist only for a downloading layer; the status line covers manifest and verification while "starting" covers the moment before the first report.
+        HasByteCounts
+            ? $"{Job.LastProgress!.Percent:0}%"
+            : Job.LastProgress?.Status ?? "starting";
 }

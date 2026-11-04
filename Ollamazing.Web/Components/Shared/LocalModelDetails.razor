@@ -56,13 +56,16 @@ else
 }
 
 @code {
+    /// <summary>The installed model whose description is shown.</summary>
     [Parameter, EditorRequired] public Model Model { get; set; } = null!;
 
+    /// <summary>Description of the model as Ollama reports it, null until the read completes.</summary>
     private ShowModelResponse? details;
 
     /// <summary>Reason the description could not be read, shown in place of the details.</summary>
     private string? loadError;
 
+    /// <summary>Reads the description of the model when its row is first expanded.</summary>
     protected override async Task OnInitializedAsync()
     {
         try
@@ -80,6 +83,7 @@ else
     /// <summary>Context length published in the model metadata under the "&lt;architecture&gt;.context_length" key.</summary>
     private static string? ContextLength(ShowModelResponse modelDetails)
     {
+        // The key is prefixed by the architecture name, so it is found by its suffix.
         string? tokens = modelDetails.Info?.ExtraInfo?
             .FirstOrDefault(entry => entry.Key.EndsWith(".context_length", StringComparison.Ordinal))
             .Value?.ToString();
@@ -89,6 +93,7 @@ else
     }
 
     /// <summary>True when the model computes embeddings instead of generating text.</summary>
-    private static bool IsEmbedding(ShowModelResponse modelDetails)
-        => modelDetails.Capabilities?.Contains("embedding", StringComparer.OrdinalIgnoreCase) == true;
+    private static bool IsEmbedding(ShowModelResponse modelDetails) =>
+        // Ollama announces embedding models through their capability list.
+        modelDetails.Capabilities?.Contains("embedding", StringComparer.OrdinalIgnoreCase) == true;
 }

@@ -20,6 +20,7 @@
 </FluentCard>
 
 @code {
+    /// <summary>Name of the figure, drawn above its value.</summary>
     [Parameter, EditorRequired] public string Label { get; set; } = "";
 
     /// <summary>The figure itself; ignored when the value needs a component, given as child content.</summary>
