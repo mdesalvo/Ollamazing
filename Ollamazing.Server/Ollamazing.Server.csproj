@@ -4,6 +4,7 @@
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
     <PackageReference Include="OllamaSharp" />
+    <PackageReference Include="ZstdSharp.Port" />
   </ItemGroup>
 
 </Project>

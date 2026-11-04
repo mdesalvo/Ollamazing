@@ -9,7 +9,8 @@
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.*" />
     <PackageVersion Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.*" />
-    <PackageVersion Include="OllamaSharp" Version="5.5.0" />
+    <PackageVersion Include="OllamaSharp" Version="5.5.*" />
+    <PackageVersion Include="ZstdSharp.Port" Version="0.8.*" />
   </ItemGroup>
 
   <!-- Ollamazing.Web -->

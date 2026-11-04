@@ -1,45 +1,45 @@
 # CLAUDE.md
 
-Guida operativa per Claude Code su questo repository.
+Working guide for Claude Code on this repository.
 
-## Cos'è Ollamazing
+## What Ollamazing is
 
-Dashboard Blazor Server (.NET 10, Fluent UI Blazor 5) che fa da frontend a un'installazione Ollama: catalogo di ollama.com a faccette, download, controllo del server, modelli locali, account ollama.com.
+A Blazor Server dashboard (.NET 10, Fluent UI Blazor 5) that fronts an Ollama installation: faceted ollama.com catalog, downloads, server control, local models, ollama.com account.
 
-## Struttura
+## Structure
 
 ```
 Ollamazing.slnx
-Ollamazing.Server/     class library senza UI né ASP.NET: Lifecycle, Status, Account, Pulls, Configuration, Extensions
-Ollamazing.Web/        web app: Catalog (scraping ollama.com, faccette) e Components (Layout, Pages, Shared)
+Ollamazing.Server/     class library with no UI or ASP.NET: Lifecycle, Status, Account, Pulls, Updates, Configuration, Extensions
+Ollamazing.Web/        web app: Catalog (ollama.com scraping, facets) and Components (Layout, Pages, Shared)
 ```
 
-- Web dipende da Server, mai il contrario; Server dipende solo da `Microsoft.Extensions.*` e OllamaSharp.
-- I servizi del server si registrano con `AddOllamazingServer(configuration)`.
-- Il namespace segue la cartella.
-- Versione (`VersionPrefix`) e proprietà comuni stanno in `Directory.Build.props`; le versioni dei pacchetti in `Directory.Packages.props` (Central Package Management), i `.csproj` hanno `PackageReference` senza `Version`.
+- Web depends on Server, never the reverse; Server depends only on `Microsoft.Extensions.*`, OllamaSharp and ZstdSharp.
+- Server services are registered with `AddOllamazingServer(configuration)`.
+- The namespace follows the folder.
+- Version (`VersionPrefix`) and shared properties live in `Directory.Build.props`; package versions in `Directory.Packages.props` (Central Package Management), so the `.csproj` files have `PackageReference` without `Version`.
 
-## Comandi
+## Commands
 
 ```bash
 dotnet build Ollamazing.slnx
 dotnet run --project Ollamazing.Web          # http://localhost:5222
 ```
 
-## Principi
+## Principles
 
-- **Multipiattaforma:** niente systemd, sudo, launchctl, taskkill o shell; il server si gestisce con `System.Diagnostics.Process`.
-- **OllamaSharp è l'interlocutore:** si usano `IOllamaApiClient` e i suoi tipi; ciò che manca si aggiunge come extension method in `Ollamazing.Server/Extensions/OllamaClientExtensions.cs`.
-- **UI solo Fluent UI Blazor 5** (versione fissata): componenti Fluent, aspetto dal tema in `MainLayout`, solo API pubblica documentata (mai interni, `.fluent-*`, shadow DOM). Dove Fluent non ha un controllo lo si fa in Razor sui token Fluent (`Shared/DualRangeSlider`).
-- **Linguaggio visivo:** azioni di pagina Outline; azione principale di un blocco Primary; azioni dentro card e righe Small Outline (le conferme: Primary + Cancel Subtle); stati con `FluentBadge` Tint (Brand installato, Success riuscito, Warning al limite, Danger errore, Informative cloud); server spento → `ServerOfflineCard` dove la pagina non funziona senza; solo gli errori in `FluentMessageBar`; monospace solo per codice, log, digest e configurazione.
-- **Faccette:** AND tra faccette, OR dentro la stessa; conteggi disgiuntivi.
+- **Cross-platform:** no systemd, sudo, launchctl, taskkill or shell; the server is managed with `System.Diagnostics.Process`.
+- **OllamaSharp is the counterpart:** use `IOllamaApiClient` and its types; whatever is missing is added as an extension method in `Ollamazing.Server/Extensions/OllamaClientExtensions.cs`.
+- **UI is Fluent UI Blazor 5 only** (pinned version): Fluent components, look from the theme in `MainLayout`, documented public API only (never internals, `.fluent-*` or shadow DOM). Where Fluent has no control it is built in Razor on Fluent tokens (`Shared/DualRangeSlider`).
+- **Visual language:** page actions Outline; the main action of a block Primary; actions inside cards and rows Small Outline (confirmations: Primary + Cancel Subtle); states with `FluentBadge` Tint (Brand installed, Success succeeded, Warning at the limit, Danger error, Informative cloud); server down → `ServerOfflineCard` where the page cannot work without it; only errors in `FluentMessageBar`; monospace only for code, logs, digests and configuration.
+- **Facets:** AND across facets, OR within one; disjunctive counts.
 
-## Coordinate
+## Coordinates
 
-- **ollama.com non ha API pubblica:** `/search?page=N` vuole `HX-Request: true`; dimensioni in `/library/<nome>/tags`; tariffe in `/pricing#model-pricing`. Il markup si gestisce solo in `OllamaCatalogScraper.cs`; il catalogo si persiste in SQLite (`CatalogStore.cs`, schema versionato con `PRAGMA user_version`) in `ollamazing.db` nella cartella dati dell'utente, spostabile con `Catalog:DatabasePath`.
-- **Account:** è legato alla chiave ed25519 del server in `~/.ollama`. Endpoint locali: `POST /api/me`, `POST /api/signout`, `GET /api/balance`, `GET /api/usage`. Il pairing apre il `signin_url` (solo `https://ollama.com`) e interroga `/api/me` finché il server risulta collegato.
-- **Aggiornamenti:** ultima release da `api.github.com/repos/ollama/ollama/releases/latest` (User-Agent obbligatorio); `UpdateCapabilityDetector` decide se l'installazione si può aggiornare sul posto o solo notificare, al primo controllo che fallisce.
-- **Stato condiviso:** `CatalogService`, `PullManager`, `ServerStatusMonitor`, `AccountMonitor`, `OllamaUpdateMonitor` sono singleton con eventi; i componenti ereditano `LiveComponentBase` e usano `Watch(...)`.
-- **Razor:** niente stringhe tra doppi apici dentro `@onclick="..."`.
-- **Lingue:** UI e commenti in inglese, commenti secondo la skill `code-commentation`.
-- **Shell:** `rm`, `cp` e `mv` sono alias interattivi, si usano `/bin/rm -f`, `/bin/cp -f`, `/bin/mv -f`.
+- **ollama.com has no public API:** `/search?page=N` needs `HX-Request: true`; sizes in `/library/<name>/tags`; prices in `/pricing#model-pricing`. Markup is handled only in `OllamaCatalogScraper.cs`; the catalog is persisted in SQLite (`CatalogStore.cs`, schema versioned with `PRAGMA user_version`) in `ollamazing.db` under the user data folder, movable with `Catalog:DatabasePath`.
+- **Account:** tied to the server ed25519 key in `~/.ollama`. Local endpoints: `POST /api/me`, `POST /api/signout`, `GET /api/balance`, `GET /api/usage`. Pairing opens the `signin_url` (only `https://ollama.com`) and polls `/api/me` until the server is linked.
+- **Updates:** latest release from `api.github.com/repos/ollama/ollama/releases/latest` (User-Agent required). `UpdateCapabilityDetector` decides whether the installation can be updated in place or only notified, at the first failing check (macOS is notify-only). `OllamaUpdater` downloads the main archive plus the GPU archives already installed (`-rocm`, `-mlx`, `-jetpack*`), verifies them against the release `sha256sum.txt`, stages them in `<install root>/.ollamazing-update` (never in the system temp folder), swaps `bin` and `lib/ollama` by rename and restores the previous version when the new server does not answer.
+- **Shared state:** `CatalogService`, `PullManager`, `ServerStatusMonitor`, `AccountMonitor`, `OllamaUpdateMonitor`, `OllamaUpdater` are singletons with events; components inherit `LiveComponentBase` and use `Watch(...)`.
+- **Razor:** no double-quoted strings inside `@onclick="..."`.
+- **Languages:** this file, UI and comments in English; comments follow the `code-commentation` skill.
+- **Shell:** `rm`, `cp` and `mv` are interactive aliases, so use `/bin/rm -f`, `/bin/cp -f`, `/bin/mv -f`.

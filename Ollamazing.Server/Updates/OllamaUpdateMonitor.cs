@@ -123,12 +123,22 @@ public sealed class OllamaUpdateMonitor : BackgroundService
                 return;
             }
 
+            // The sizes let the page tell the user how big the download is before it starts.
+            Dictionary<string, long> assetSizes = new(StringComparer.Ordinal);
+            foreach (GitHubAsset asset in gitHubRelease.Assets ?? [])
+            {
+                // Two assets with the same name cannot be told apart so the first one wins.
+                assetSizes.TryAdd(asset.Name, asset.Size);
+            }
+
             // Ollama tags releases as "v0.40.14" while the server reports "0.40.14".
             latestRelease = new OllamaRelease(
                 gitHubRelease.TagName.TrimStart('v'),
+                gitHubRelease.TagName,
                 gitHubRelease.HtmlUrl,
                 gitHubRelease.PublishedAt,
-                (gitHubRelease.Assets ?? []).Select(asset => asset.Name).ToList());
+                (gitHubRelease.Assets ?? []).Select(asset => asset.Name).ToList(),
+                assetSizes);
             checkedAt = DateTimeOffset.Now;
             lastError = null;
         }
@@ -228,5 +238,9 @@ public sealed class OllamaUpdateMonitor : BackgroundService
     {
         [JsonPropertyName("name")]
         public string Name { get; set; } = string.Empty;
+
+        /// <summary>Size of the archive in bytes.</summary>
+        [JsonPropertyName("size")]
+        public long Size { get; set; }
     }
 }

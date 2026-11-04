@@ -35,6 +35,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ServerStatusMonitor>();
         services.AddSingleton<AccountMonitor>();
         services.AddSingleton<OllamaUpdateMonitor>();
+        services.AddSingleton<OllamaUpdater>();
         services.AddSingleton<PullManager>();
 
         // Auto-start runs before the first status probe, so consumers see a server that is already coming up.

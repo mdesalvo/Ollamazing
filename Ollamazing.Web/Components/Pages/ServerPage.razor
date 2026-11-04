@@ -2,6 +2,7 @@
 @inherits LiveComponentBase
 @inject ServerStatusMonitor StatusMonitor
 @inject OllamaUpdateMonitor UpdateMonitor
+@inject OllamaUpdater Updater
 @inject OllamaServerController ServerController
 @inject IOllamaApiClient OllamaClient
 @inject IOptions<OllamaOptions> OllamaOptions
@@ -25,6 +26,11 @@
     </FluentMessageBar>
 }
 
+@if (Updater.Progress is { Stage: UpdateStage.Failed } failedUpdate)
+{
+    <FluentMessageBar Intent="MessageBarIntent.Error" Title="Update failed" Margin="@Margin.Bottom4">@failedUpdate.Error</FluentMessageBar>
+}
+
 @if (UpdateMonitor.IsEnabled && update.LastError is not null)
 {
     <FluentMessageBar Intent="MessageBarIntent.Error" Title="Update check failed" Margin="@Margin.Bottom4">@update.LastError</FluentMessageBar>
@@ -43,55 +49,81 @@
             {
                 <FluentText Size="TextSize.Size200" Class="muted">Stop or restart it where it was started: the desktop app, a terminal or a system service.</FluentText>
             }
-            @if (UpdateMonitor.IsEnabled && status.IsReachable && update.InstalledVersion is not null)
-            {
-                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true" Margin="@Margin.Top2">
-                    @if (update.LatestRelease is null)
-                    {
-                        <FluentText Size="TextSize.Size200" Class="muted">Checking for updates…</FluentText>
-                    }
-                    else if (update.IsUpdateAvailable)
-                    {
-                        <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Warning" Content="update available" />
-                        <FluentText>Ollama @update.LatestRelease.Version is available</FluentText>
-                        <FluentLink Href="@update.LatestRelease.Url" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">Release notes</FluentLink>
-                    }
-                    else
-                    {
-                        <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Success" Content="up to date" />
-                        @if (update.CheckedAt is { } updateCheckedAt)
-                        {
-                            <FluentText Size="TextSize.Size200" Class="muted">Checked @Display.Relative(updateCheckedAt)</FluentText>
-                        }
-                    }
-                </FluentStack>
-                @if (update.IsUpdateAvailable && update.Capability is { } updateCapability)
-                {
-                    <FluentText Size="TextSize.Size200" Class="muted">
-                        @if (updateCapability.Mode == UpdateMode.InPlace)
-                        {
-                            <text>This installation can be updated in place.</text>
-                        }
-                        else
-                        {
-                            <text>@updateCapability.Reason <FluentLink Href="https://ollama.com/download" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">Download Ollama</FluentLink></text>
-                        }
-                    </FluentText>
-                }
-            }
         </FluentStack>
         <FluentSpacer />
         @if (!status.IsInitial && !IsExternal(status))
         {
             <FluentButton Appearance="ButtonAppearance.Primary" Loading="@(runningAction == ServerAction.Start)"
-                          Disabled="@(runningAction is not null || status.Process.IsRunning || status.IsReachable)" OnClick="StartAsync">Start</FluentButton>
+                          Disabled="@(runningAction is not null || Updater.Progress is { IsRunning: true } || status.Process.IsRunning || status.IsReachable)" OnClick="StartAsync">Start</FluentButton>
             <FluentButton Loading="@(runningAction == ServerAction.Restart)"
-                          Disabled="@(runningAction is not null || !status.Process.IsOwned || !status.IsReachable)" OnClick="RestartAsync">Restart</FluentButton>
+                          Disabled="@(runningAction is not null || Updater.Progress is { IsRunning: true } || !status.Process.IsOwned || !status.IsReachable)" OnClick="RestartAsync">Restart</FluentButton>
             <FluentButton Appearance="ButtonAppearance.Outline" Loading="@(runningAction == ServerAction.Stop)"
-                          Disabled="@(runningAction is not null || !status.Process.IsOwned)" OnClick="StopAsync">Stop</FluentButton>
+                          Disabled="@(runningAction is not null || Updater.Progress is { IsRunning: true } || !status.Process.IsOwned)" OnClick="StopAsync">Stop</FluentButton>
         }
     </FluentStack>
 </FluentCard>
+
+@if (UpdateMonitor.IsEnabled)
+{
+    <SectionCard Title="Updates" Margin="@Margin.Top4">
+        <Actions>
+            @if (update.IsUpdateAvailable && update.Capability is { Mode: UpdateMode.InPlace } && Updater.Progress is not { IsRunning: true })
+            {
+                <FluentButton Appearance="ButtonAppearance.Primary" OnClick="Updater.Start">Update</FluentButton>
+            }
+            @if (Updater.Progress is { IsRunning: true, CanCancel: true })
+            {
+                <FluentButton Appearance="ButtonAppearance.Outline" OnClick="Updater.Cancel">Cancel</FluentButton>
+            }
+        </Actions>
+        <ChildContent>
+            <FluentStack Orientation="Orientation.Vertical" VerticalGap="8px" HorizontalAlignment="HorizontalAlignment.Stretch">
+                @if (Updater.Progress is { IsRunning: true } runningUpdate)
+                {
+                    <FluentProgressBar Value="@UpdatePercent(runningUpdate)" Max="100" Width="100%" />
+                    <FluentText Size="TextSize.Size200" Class="muted">@UpdateStageText(runningUpdate)</FluentText>
+                }
+                else if (update.InstalledVersion is null)
+                {
+                    <FluentText Size="TextSize.Size200" Class="muted">Start the server to check for updates</FluentText>
+                }
+                else if (update.LatestRelease is null)
+                {
+                    <FluentText Size="TextSize.Size200" Class="muted">Checking…</FluentText>
+                }
+                else if (update.IsUpdateAvailable)
+                {
+                    <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true">
+                        <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Warning" Content="@($"{update.LatestRelease.Version} available")" />
+                        @if (update.Capability is { } updateCapability && DownloadSize(update.LatestRelease, updateCapability) is { } downloadSize)
+                        {
+                            <FluentText Size="TextSize.Size200" Class="muted">@Display.Bytes(downloadSize)</FluentText>
+                        }
+                        <FluentLink Href="@update.LatestRelease.Url" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">Release notes</FluentLink>
+                        @if (update.Capability is { Mode: UpdateMode.InPlace })
+                        {
+                            <FluentText Size="TextSize.Size200" Class="muted">The server will restart</FluentText>
+                        }
+                    </FluentStack>
+                    @if (update.Capability is { Mode: UpdateMode.NotifyOnly } notifyCapability)
+                    {
+                        <FluentText Size="TextSize.Size200" Class="muted">@notifyCapability.Reason <FluentLink Href="https://ollama.com/download" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">Download</FluentLink></FluentText>
+                    }
+                }
+                else
+                {
+                    <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true">
+                        <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Success" Content="up to date" />
+                        @if (update.CheckedAt is { } updateCheckedAt)
+                        {
+                            <FluentText Size="TextSize.Size200" Class="muted">@Display.Relative(updateCheckedAt)</FluentText>
+                        }
+                    </FluentStack>
+                }
+            </FluentStack>
+        </ChildContent>
+    </SectionCard>
+}
 
 <FluentGrid Spacing="3" Margin="@Margin.Top4">
     <FluentGridItem Xs="12" Sm="6">
@@ -184,6 +216,7 @@
         // Every probe updates the cards; the log follows only on request.
         Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
         Watch(handler => UpdateMonitor.Changed += handler, handler => UpdateMonitor.Changed -= handler);
+        Watch(handler => Updater.Changed += handler, handler => Updater.Changed -= handler);
         StatusMonitor.Changed += ReloadLogWhenFollowing;
         await LoadLogAsync();
     }
@@ -218,6 +251,50 @@
         await StatusMonitor.ProbeNowAsync();
         await LoadLogAsync();
     }
+
+    /// <summary>Percentage of the whole download or unpacking that is done; null when the bar cannot be determinate.</summary>
+    private static int? UpdatePercent(UpdateProgress progress) =>
+        progress.BytesTotal is > 0 && progress.Stage is UpdateStage.Downloading or UpdateStage.Extracting
+            ? (int)(progress.BytesDone * 100 / progress.BytesTotal.Value)
+            : null;
+
+    /// <summary>Total download size of the archives that an in-place update fetches; null when any size is unknown.</summary>
+    private static long? DownloadSize(OllamaRelease release, UpdateCapability capability)
+    {
+        // Without archives there is nothing to measure.
+        if (capability.AssetNames.Count == 0)
+            return null;
+
+        // The archives add up to what the user will download.
+        long totalSize = 0;
+        foreach (string assetName in capability.AssetNames)
+        {
+            // One archive of unknown size makes the whole total unknown.
+            if (!release.AssetSizes.TryGetValue(assetName, out long assetSize))
+                return null;
+            totalSize += assetSize;
+        }
+
+        // Every archive was measured so the sum is the download size.
+        return totalSize;
+    }
+
+    /// <summary>Plain-words description of what the running update is doing.</summary>
+    private static string UpdateStageText(UpdateProgress progress) => progress.Stage switch
+    {
+        // The size is shown only when it is known.
+        UpdateStage.Downloading => progress.BytesTotal is { } bytesTotal
+            ? $"Downloading (Version {progress.Version}) · {Display.Bytes(progress.BytesDone)} of {Display.Bytes(bytesTotal)}"
+            : $"Downloading (Version {progress.Version}) · {Display.Bytes(progress.BytesDone)}",
+        // The downloaded files are being unpacked.
+        UpdateStage.Extracting => $"Unpacking (Version {progress.Version})",
+        // The files are being swapped.
+        UpdateStage.Installing => $"Installing (Version {progress.Version})",
+        // The server is coming back on the new version.
+        UpdateStage.Restarting => $"Restarting (Version {progress.Version})",
+        // The other stages show no progress.
+        _ => string.Empty
+    };
 
     private Task StartAsync() => ExecuteAsync(ServerAction.Start);
 

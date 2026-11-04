@@ -35,6 +35,10 @@ public static class UpdateCapabilityDetector
         if (executablePath.Contains("/Cellar/", StringComparison.Ordinal))
             return NotifyOnly("This Ollama is managed by Homebrew.", executablePath, null);
 
+        // The macOS archive is flat and carries code signatures that Ollamazing cannot restore after extracting it.
+        if (OperatingSystem.IsMacOS())
+            return NotifyOnly("On macOS Ollama is updated by its app or by Homebrew.", executablePath, null);
+
         // The official archives keep the runtime libraries in lib/ollama next to or one level above the binary.
         string? installRoot = FindInstallRoot(executableFolder);
         if (installRoot is null)
@@ -45,8 +49,12 @@ public static class UpdateCapabilityDetector
         if (expectedAssetName is null || !release.AssetNames.Contains(expectedAssetName, StringComparer.Ordinal))
             return NotifyOnly($"Release {release.Version} has no archive for {RuntimeInformation.RuntimeIdentifier}.", executablePath, installRoot);
 
-        // An update replaces both the binary and the libraries, so Ollamazing must be able to write to both folders.
-        foreach (string folderToProbe in new[] { executableFolder, Path.Combine(installRoot, "lib", "ollama") })
+        // An update wipes lib/ollama, so every companion archive whose libraries are installed must be downloaded again.
+        List<string> assetNames = [expectedAssetName, .. CompanionAssetNames(installRoot, expectedAssetName, release.AssetNames)];
+
+        // An update creates its staging folder in the installation root, swaps lib/ollama by renaming it inside lib and replaces the binary in its folder.
+        string[] foldersToProbe = new[] { executableFolder, installRoot, Path.Combine(installRoot, "lib"), Path.Combine(installRoot, "lib", "ollama") }.Distinct(StringComparer.Ordinal).ToArray();
+        foreach (string folderToProbe in foldersToProbe)
         {
             if (!CanWriteTo(folderToProbe))
                 return NotifyOnly($"Ollamazing cannot write to {folderToProbe}.", executablePath, installRoot);
@@ -57,12 +65,12 @@ public static class UpdateCapabilityDetector
             return NotifyOnly("The server was started outside Ollamazing: start it from here to allow updates in place.", executablePath, installRoot);
 
         // Nothing stands in the way of an update.
-        return new UpdateCapability(UpdateMode.InPlace, null, executablePath, installRoot);
+        return new UpdateCapability(UpdateMode.InPlace, null, executablePath, installRoot, assetNames);
     }
 
     /// <summary>Builds the capability that reports an obstacle together with the paths found before it.</summary>
     private static UpdateCapability NotifyOnly(string reason, string? executablePath, string? installRoot) =>
-        new(UpdateMode.NotifyOnly, reason, executablePath, installRoot);
+        new(UpdateMode.NotifyOnly, reason, executablePath, installRoot, []);
 
     /// <summary>Finds the real file behind the configured executable name; null when it does not exist.</summary>
     private static string? ResolveExecutable(string configuredPath)
@@ -144,10 +152,6 @@ public static class UpdateCapabilityDetector
             _ => null
         };
 
-        // The macOS archive is a single universal build.
-        if (OperatingSystem.IsMacOS())
-            return "ollama-darwin.tgz";
-
         // Linux and Windows archives exist per architecture.
         if (architectureName is null)
             return null;
@@ -158,6 +162,53 @@ public static class UpdateCapabilityDetector
 
         // No archive exists for other systems.
         return null;
+    }
+
+    /// <summary>Returns the companion archives of the release whose libraries are already installed.</summary>
+    private static IReadOnlyList<string> CompanionAssetNames(string installRoot, string mainAssetName, IReadOnlyList<string> releaseAssetNames)
+    {
+        // Companion archives share the stem of the main archive and its extension.
+        string[] knownExtensions = [".tar.zst", ".zip"];
+        string? extension = knownExtensions.FirstOrDefault(knownExtension => mainAssetName.EndsWith(knownExtension, StringComparison.Ordinal));
+        if (extension is null)
+            return [];
+
+        // A companion is named after the main archive followed by a dash and its suffix.
+        string prefix = mainAssetName[..^extension.Length] + "-";
+
+        // The installed library folders tell which companions were installed.
+        List<string> installedFolderNames;
+        try
+        {
+            installedFolderNames = Directory.EnumerateDirectories(Path.Combine(installRoot, "lib", "ollama")).Select(Path.GetFileName).OfType<string>().ToList();
+        }
+        catch (Exception enumerationError) when (enumerationError is IOException or UnauthorizedAccessException)
+        {
+            // The write probe that follows rejects an unreadable folder anyway.
+            return [];
+        }
+
+        // Release assets are visited in ordinal order so the download order is stable.
+        List<string> companionAssetNames = [];
+        foreach (string releaseAssetName in releaseAssetNames.Order(StringComparer.Ordinal))
+        {
+            // Only archives shaped like the main one with a non-empty suffix can be companions.
+            if (!releaseAssetName.StartsWith(prefix, StringComparison.Ordinal) || !releaseAssetName.EndsWith(extension, StringComparison.Ordinal))
+                continue;
+
+            // An asset no longer than the prefix and the extension together carries no suffix.
+            int suffixLength = releaseAssetName.Length - prefix.Length - extension.Length;
+            if (suffixLength <= 0)
+                continue;
+
+            // A companion is needed when an installed folder carries its suffix in the name.
+            string suffix = releaseAssetName.Substring(prefix.Length, suffixLength);
+            if (installedFolderNames.Any(folderName => folderName.Contains(suffix, StringComparison.Ordinal)))
+                companionAssetNames.Add(releaseAssetName);
+        }
+
+        // The kept companions follow the main archive in the update.
+        return companionAssetNames;
     }
 
     /// <summary>Tells whether a file can be created in the folder by creating one that vanishes at once.</summary>
