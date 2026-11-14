@@ -1,6 +1,13 @@
 <p align="center"><img src="Ollamazing.Web/wwwroot/Images/ollamazing.jpg" alt="Ollamazing: ollama handling made amazing" /></p>
 
-Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dashboard. Stop juggling terminal commands and browser tabs: find the right model in the ollama.com catalog with faceted filters, pull it with live progress, start and stop the server, keep your local models tidy and link your ollama.com cloud account, all in a few clicks. **Built on .NET 10, Blazor Server, [OllamaSharp](https://github.com/awaescher/OllamaSharp) and [Fluent UI Blazor](https://www.fluentui-blazor.net)**.
+<p>
+  <img src="https://img.shields.io/badge/.NET-10-932BD4" alt=".NET 10"/>
+  <img src="https://img.shields.io/badge/OllamaSharp-932BD4?logo=nuget" alt="OllamaSharp"/>
+  <img src="https://img.shields.io/badge/Ollama-932BD4?logo=ollama" alt="Ollama"/>
+</p>
+
+
+Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dashboard. Stop juggling terminal commands and browser tabs: find the right model in the ollama.com catalog with faceted filters, pull it with live progress, start and stop the server, keep your local models tidy and link your ollama.com cloud account, all in a few clicks.
 
 ## What you can do
 
