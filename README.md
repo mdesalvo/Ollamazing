@@ -1,9 +1,9 @@
 <p align="center"><img src="Ollamazing.Web/wwwroot/Images/ollamazing.jpg" alt="Ollamazing: ollama handling made amazing" /></p>
 
 <p>
-  <img src="https://img.shields.io/badge/.NET-10-932BD4" alt=".NET 10"/>
-  <img src="https://img.shields.io/badge/OllamaSharp-932BD4?logo=nuget" alt="OllamaSharp"/>
-  <img src="https://img.shields.io/badge/Ollama-932BD4?logo=ollama" alt="Ollama"/>
+  <img src="https://img.shields.io/badge/.NET-10-FFFFFF?color=lightblue" alt=".NET 10"/>
+  <img src="https://img.shields.io/badge/OllamaSharp-FFFFFF?logo=nuget&color=lightblue" alt="OllamaSharp"/>
+  <img src="https://img.shields.io/badge/Ollama-FFFFFF?logo=ollama&color=lightblue" alt="Ollama"/>
 </p>
 
 
