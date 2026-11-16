@@ -13,6 +13,7 @@
         @*
             One brand bar: the logo on the left, the sections in the middle, the server and the account on the right.
             Every entry is a plain link, so navigation happens only on a click; the open section reads in white against the sky blue of the others.
+            Counters are white pills in the blue of the bar; status dots keep their colour.
         *@
         <FluentLayoutItem Area="LayoutArea.Header">
             <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="16px">
@@ -25,14 +26,14 @@
                         Local models
                         @if (StatusMonitor.Current.IsReachable)
                         {
-                            <FluentCounterBadge Count="StatusMonitor.Current.LocalModels.Count" ShowZero="true" Color="BadgeColor.Subtle" />
+                            <FluentCounterBadge Count="StatusMonitor.Current.LocalModels.Count" ShowZero="true" Color="null" BackgroundColor="@CounterBackground" Style="@CounterTextStyle" Margin="@Margin.Start2" />
                         }
                     </FluentAnchorButton>
                     <FluentAnchorButton Href="downloads" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("downloads")">
                         Downloads
                         @if (PullManager.ActiveCount > 0)
                         {
-                            <FluentCounterBadge Count="PullManager.ActiveCount" Color="BadgeColor.Informative" />
+                            <FluentCounterBadge Count="PullManager.ActiveCount" Color="null" BackgroundColor="@CounterBackground" Style="@CounterTextStyle" Margin="@Margin.Start2" />
                         }
                     </FluentAnchorButton>
                 </FluentStack>
@@ -42,14 +43,14 @@
                     Server
                     @if (!StatusMonitor.Current.IsInitial)
                     {
-                        <FluentCounterBadge Dot="true" Color="@(StatusMonitor.Current.IsReachable ? BadgeColor.Success : BadgeColor.Danger)" />
+                        <FluentCounterBadge Dot="true" Color="@(StatusMonitor.Current.IsReachable ? BadgeColor.Success : BadgeColor.Danger)" Margin="@Margin.Start2" />
                     }
                 </FluentAnchorButton>
                 <FluentAnchorButton Href="account" Appearance="ButtonAppearance.Transparent" Color="@SectionColor("account")" Title="@AccountTooltip">
                     Account
                     @if (AccountMonitor.Current is { } account)
                     {
-                        <FluentCounterBadge Dot="true" Color="@(account.IsSignedIn ? BadgeColor.Success : BadgeColor.Warning)" />
+                        <FluentCounterBadge Dot="true" Color="@(account.IsSignedIn ? BadgeColor.Success : BadgeColor.Warning)" Margin="@Margin.Start2" />
                     }
                 </FluentAnchorButton>
             </FluentStack>
@@ -72,6 +73,12 @@
 
     /// <summary>Text colour of the entry of the page on screen: plain white, the brightest tone the bar can carry.</summary>
     private const string OpenSectionText = "var(--colorNeutralForegroundOnBrand)";
+
+    /// <summary>Background of the header counters: the same white as the open entry.</summary>
+    private const string CounterBackground = "var(--colorNeutralForegroundOnBrand)";
+
+    /// <summary>Digits of the header counters in the blue of the bar itself, which reads on white where the sky blue of the labels would not.</summary>
+    private const string CounterTextStyle = "color: var(--colorBrandBackground)";
 
     /// <summary>True once the Ollamazing theme is applied, so the page may be shown.</summary>
     private bool isThemed;

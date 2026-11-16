@@ -8,7 +8,7 @@
 <PageHeader Title="Downloads">
     <Subtitle>@(PullManager.ActiveCount > 0 ? $"{PullManager.ActiveCount} running · downloads continue when you leave this page" : "Downloads continue when you leave this page")</Subtitle>
     <Actions>
-        @if (PullManager.Jobs.Any(job => !job.IsActive))
+        @if (PullManager.Jobs.Any(job => job.IsFinished))
         {
             <FluentButton Appearance="ButtonAppearance.Outline" OnClick="PullManager.ClearFinished">Clear finished</FluentButton>
         }
@@ -55,6 +55,12 @@ else
                     <FluentText Size="TextSize.Size200" Class="muted">started @Display.Relative(job.StartedAt)</FluentText>
                     @if (job.IsActive)
                     {
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => PullManager.Pause(job.Id)">Pause</FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
+                    }
+                    else if (job.IsPaused)
+                    {
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Disabled="@(!StatusMonitor.Current.IsReachable)" OnClick="() => PullManager.Resume(job.Id)">Resume</FluentButton>
                         <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
                     }
                     else if (job.State is PullState.Failed or PullState.Cancelled)
@@ -69,6 +75,17 @@ else
                     @if (job.LastProgress is { Total: > 0 } progress)
                     {
                         <FluentText Size="TextSize.Size200" Class="muted">@progress.Status · @Display.Bytes(progress.Completed) of @Display.Bytes(progress.Total)</FluentText>
+                    }
+                }
+                else if (job.IsPaused)
+                {
+                    @if (job.LastProgress is { Total: > 0 } pausedProgress)
+                    {
+                        <FluentText Size="TextSize.Size200" Class="muted">Paused · @pausedProgress.Status · @Display.Bytes(pausedProgress.Completed) of @Display.Bytes(pausedProgress.Total)</FluentText>
+                    }
+                    else
+                    {
+                        <FluentText Size="TextSize.Size200" Class="muted">Paused before any layer started downloading</FluentText>
                     }
                 }
                 else if (job.Error is not null)
@@ -101,6 +118,8 @@ else
     {
         // A running pull carries the accent.
         PullState.Running => BadgeColor.Brand,
+        // A paused pull waits for the user.
+        PullState.Paused => BadgeColor.Subtle,
         // A finished pull is good news.
         PullState.Completed => BadgeColor.Success,
         // A failed pull needs attention.
