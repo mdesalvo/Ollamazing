@@ -29,7 +29,7 @@
     // Facets and results are computed once per render and shared by the panel, the counters and the list.
     allModels = CatalogService.Models;
     facets = query.BuildFacets(allModels);
-    IReadOnlyList<CatalogModel> matchingModels = SortModels(allModels.Where(model => query.Matches(model, facets))).ToList();
+    matchingModels = SortModels(allModels.Where(model => query.Matches(model, facets))).ToList();
     int modelsAwaitingSizes = query.CountAwaitingSizes(allModels, facets);
 }
 
@@ -259,13 +259,15 @@
                         <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ClearFacet(facet)">Clear</FluentButton>
                     }
                 </FluentStack>
+                @* Alternatives wear a round mark and take a single choice; a second click returns the facet to all. *@
                 @foreach (FacetOption option in facet.Options)
                 {
-                    int optionCount = query.CountOption(allModels, facets, facet, option);
+                    int optionCount = query.CountOption(allModels, matchingModels, facets, facet, option);
                     bool isSelected = query.IsSelected(facet.Key, option.Key);
                     <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center">
                         <FluentCheckbox Label="@option.Label" Value="isSelected" Disabled="@(optionCount == 0 && !isSelected)"
-                                        ValueChanged="(bool _) => ToggleOption(facet, option)" />
+                                        Shape="@(facet.IsExclusive ? CheckboxShape.Circular : CheckboxShape.Square)"
+                                        ValueChanged="(bool _) => ChooseOption(facet, option)" />
                         <FluentSpacer />
                         <FluentText Size="TextSize.Size200" Class="muted">@optionCount</FluentText>
                     </FluentStack>
@@ -392,6 +394,9 @@
 
     /// <summary>Facets built from <see cref="allModels"/> in the current render, read by the filter controls.</summary>
     private IReadOnlyList<Facet> facets = [];
+
+    /// <summary>Models on screen in the current render, which the option counts of the filter controls are taken on.</summary>
+    private IReadOnlyList<CatalogModel> matchingModels = [];
 
     /// <summary>Ordering chosen in the sort selector.</summary>
     private SortOrder sortOrder = SortOrder.Popular;
@@ -564,11 +569,18 @@
         // A changed filter or order makes the previous scroll depth meaningless.
         visibleCount = PageSize;
 
-    /// <summary>Flips one option of a facet in the query and restarts paging.</summary>
-    private void ToggleOption(Facet facet, FacetOption option)
+    /// <summary>Applies a click on an option of a facet and restarts paging.</summary>
+    private void ChooseOption(Facet facet, FacetOption option)
     {
-        // The option joins or leaves the selection of its facet.
-        query.Toggle(facet.Key, option.Key);
+        // A requirement facet adds or drops the option, while an alternative facet makes it its only choice
+        // or, clicked again, goes back to all.
+        if (!facet.IsExclusive)
+            query.Toggle(facet.Key, option.Key);
+        else if (query.IsSelected(facet.Key, option.Key))
+            query.ClearSelections(facet.Key);
+        else
+            query.Select(facet.Key, option.Key);
+
         // The result list changed, so it restarts from its first page.
         ResetPaging();
     }

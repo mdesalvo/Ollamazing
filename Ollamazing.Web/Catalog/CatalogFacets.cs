@@ -6,20 +6,15 @@ namespace Ollamazing.Web.Catalog;
 /// <summary>One selectable value of a facet, with the predicate deciding which models carry it.</summary>
 public sealed record FacetOption(string Key, string Label, Func<CatalogModel, bool> Matches);
 
-/// <summary>A dimension of the catalog the user can narrow by, such as class, pricing or capability.</summary>
-public sealed record Facet(string Key, string Title, IReadOnlyList<FacetOption> Options);
+/// <summary>A dimension of the catalog the user can narrow by, where exclusive facets take a single option because their options are alternatives.</summary>
+public sealed record Facet(string Key, string Title, IReadOnlyList<FacetOption> Options, bool IsExclusive = false);
 
-/// <summary>Faceted query over the catalog: facets combine in AND, options of the same facet combine in OR.</summary>
-/// <remarks>
-/// Option counts are disjunctive: each count applies every other facet but ignores the selection of its own facet,
-/// so the user sees how many models an extra option would add.
-/// </remarks>
+/// <summary>Faceted query over the catalog: every selected option of every facet must hold.</summary>
+/// <remarks>Each option count is how many models the list would show after a click on that option.</remarks>
 public sealed class CatalogQuery
 {
     /// <summary>Key of the facet separating local weights from cloud offerings.</summary>
     public const string ClassFacetKey = "class";
-    /// <summary>Key of the facet separating free options from paid ones.</summary>
-    public const string PricingFacetKey = "pricing";
     /// <summary>Key of the facet listing the capability badges found in the catalog.</summary>
     public const string CapabilityFacetKey = "capability";
     /// <summary>Key of the facet grouping models by parameter count.</summary>
@@ -96,6 +91,13 @@ public sealed class CatalogQuery
             facetSelection.Add(optionKey);
     }
 
+    /// <summary>Makes the option the only choice of an exclusive facet.</summary>
+    public void Select(string facetKey, string optionKey)
+    {
+        // The facet keeps just this option, whatever it held before.
+        selectedOptions[facetKey] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { optionKey };
+    }
+
     /// <summary>Drops the selected options of every facet.</summary>
     public void ClearSelections() => selectedOptions.Clear();
 
@@ -105,12 +107,9 @@ public sealed class CatalogQuery
     /// <summary>Drops the selected options of one facet, leaving the other facets as they are.</summary>
     public void ClearSelections(string facetKey) => selectedOptions.Remove(facetKey);
 
-    /// <summary>Builds the facets for the given catalog, with predicates that depend on the current selection.</summary>
+    /// <summary>Builds the facets of the filter panel for the given catalog.</summary>
     public IReadOnlyList<Facet> BuildFacets(IReadOnlyList<CatalogModel> models)
     {
-        // With only the cloud class selected, "free" refers to the free cloud tier rather than to downloadable weights.
-        bool isCloudOnly = IsCloudOnly;
-
         // Capabilities are discovered from the catalog, so new badges on ollama.com appear without code changes.
         List<FacetOption> capabilityOptions = models
             .SelectMany(model => model.Capabilities)
@@ -120,32 +119,37 @@ public sealed class CatalogQuery
             .ToList();
 
         // The facets are listed in the order the filter panel shows them.
+        // Class splits the catalog in two that add up to the whole: a model with downloadable weights is local
+        // even when ollama.com also serves it, so only the models without weights are cloud.
         return
         [
             new Facet(ClassFacetKey, "Class", [
                 new FacetOption(LocalOptionKey, "Local", model => model.OffersLocal),
-                new FacetOption(CloudOptionKey, "Cloud", model => model.OffersCloud)
-            ]),
-            new Facet(PricingFacetKey, "Pricing", [
-                new FacetOption("free", "Free", model => isCloudOnly ? model.IsCloudFree : model.HasFreeOption),
-                new FacetOption("paid", "Paid", model => model.HasPaidOption)
-            ]),
+                new FacetOption(CloudOptionKey, "Cloud only", model => !model.OffersLocal)
+            ], IsExclusive: true),
             new Facet(CapabilityFacetKey, "Capabilities", capabilityOptions),
             new Facet(ParametersFacetKey, "Parameters", ParameterBands
                 .Select(band => new FacetOption(band.Key, band.Label, model => model.ParameterSizes
                     .Select(ParseBillions)
                     .Any(billions => billions >= band.MinBillions && billions < band.MaxBillions)))
-                .ToList())
+                .ToList(), IsExclusive: true)
         ];
     }
 
-    /// <summary>True when a model satisfies search text, size range, price ranges and every facet except <paramref name="ignoredFacetKey"/>.</summary>
-    public bool Matches(CatalogModel model, IReadOnlyList<Facet> facets, string? ignoredFacetKey = null)
-        => MatchesText(model) && MatchesSizeRange(model) && MatchesPriceRange(model) && facets.All(facet => facet.Key == ignoredFacetKey || MatchesFacet(model, facet));
+    /// <summary>True when a model satisfies search text, size range, price ranges and every facet except the one whose single choice a click would replace.</summary>
+    public bool Matches(CatalogModel model, IReadOnlyList<Facet> facets, string? replacedFacetKey = null)
+        => MatchesText(model) && MatchesSizeRange(model) && MatchesPriceRange(model) && facets.All(facet => facet.Key == replacedFacetKey || MatchesFacet(model, facet));
 
-    /// <summary>Number of models the option would show, applying every other facet (disjunctive count).</summary>
-    public int CountOption(IReadOnlyList<CatalogModel> models, IReadOnlyList<Facet> facets, Facet facet, FacetOption option)
-        => models.Count(model => option.Matches(model) && Matches(model, facets, facet.Key));
+    /// <summary>Number of models the list would show after a click on the option.</summary>
+    public int CountOption(IReadOnlyList<CatalogModel> models, IReadOnlyList<CatalogModel> matchingModels, IReadOnlyList<Facet> facets, Facet facet, FacetOption option)
+    {
+        // A single-choice facet replaces its choice on a click, so its count applies every other facet to the whole catalog.
+        if (facet.IsExclusive)
+            return models.Count(model => option.Matches(model) && Matches(model, facets, facet.Key));
+
+        // A tick adds one more requirement, so its count stays within the models on screen.
+        return matchingModels.Count(option.Matches);
+    }
 
     /// <summary>Models excluded only because their tag sizes are not loaded yet while a size range is active.</summary>
     public int CountAwaitingSizes(IReadOnlyList<CatalogModel> models, IReadOnlyList<Facet> facets)
@@ -183,7 +187,7 @@ public sealed class CatalogQuery
     /// <summary>Selected option keys of one facet, null when the facet was never touched.</summary>
     private HashSet<string>? SelectedOf(string facetKey) => selectedOptions.GetValueOrDefault(facetKey);
 
-    /// <summary>Options of the same facet are alternatives: one matching option is enough.</summary>
+    /// <summary>Every selected option of the facet must hold for the model.</summary>
     private bool MatchesFacet(CatalogModel model, Facet facet)
     {
         // A facet with nothing selected does not constrain the result.
@@ -191,8 +195,8 @@ public sealed class CatalogQuery
         if (facetSelection is not { Count: > 0 })
             return true;
 
-        // One selected option that the model carries is enough, as options of a facet are alternatives.
-        return facet.Options.Any(option => facetSelection.Contains(option.Key) && option.Matches(model));
+        // Each tick narrows the list, so the model must carry every ticked option of the facet.
+        return facet.Options.All(option => !facetSelection.Contains(option.Key) || option.Matches(model));
     }
 
     /// <summary>True when the search text is empty or appears in the name or the description.</summary>

@@ -59,9 +59,6 @@ public sealed record CatalogModel
         ? Tags.Any(tag => !tag.IsCloud)
         : !OffersCloud || Downloads is not null;
 
-    /// <summary>True when at least one way of running the model costs nothing: local weights or a free cloud tier.</summary>
-    public bool HasFreeOption => OffersLocal || IsCloudFree;
-
     /// <summary>True when the cloud offering is billed against the paid usage quota.</summary>
     public bool HasPaidOption => OffersCloud && !IsCloudFree;
 
