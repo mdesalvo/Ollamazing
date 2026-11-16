@@ -19,9 +19,10 @@
             <FluentButton Appearance="ButtonAppearance.Outline" Loading="isLoadingAccountData" OnClick="LoadAccountDataAsync">Refresh</FluentButton>
             @if (isConfirmingSignOut)
             {
+                @* Pressing Sign out swaps it for this pair, which would leave the keyboard focus nowhere; Cancel takes it, so a second Enter keeps the account linked. *@
                 <FluentButton Appearance="ButtonAppearance.Primary" Loading="isSigningOut" OnClick="SignOutAsync"
                               Title="Revokes the key of this server on ollama.com: cloud models stop until the account is linked again">Confirm sign out</FluentButton>
-                <FluentButton Appearance="ButtonAppearance.Subtle" Disabled="isSigningOut" OnClick="CancelSignOut">Cancel</FluentButton>
+                <FluentButton Appearance="ButtonAppearance.Subtle" Autofocus="true" Disabled="isSigningOut" OnClick="CancelSignOut">Cancel</FluentButton>
             }
             else
             {

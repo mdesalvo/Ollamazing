@@ -15,9 +15,9 @@
 
   <!-- Ollamazing.Web -->
   <ItemGroup>
-    <PackageVersion Include="AngleSharp" Version="1.9.*" />
+    <PackageVersion Include="AngleSharp" Version="1.10.*" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.*" />
-    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components" Version="5.0.*" />
+    <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components" Version="5.1.*" />
   </ItemGroup>
 
 </Project>
