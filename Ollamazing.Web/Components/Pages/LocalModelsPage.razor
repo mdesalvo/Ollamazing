@@ -20,7 +20,7 @@
 @if (status.IsReachable)
 {
     <PageHeader Title="Local models">
-        <Subtitle>@status.LocalModels.Count installed · @Display.Bytes(status.LocalModels.Where(model => !model.IsCloud()).Sum(model => model.Size)) on disk · @status.RunningModels.Count in memory</Subtitle>
+        <Subtitle>@status.LocalModels.Count installed · @Display.Bytes(status.LocalDiskBytes) on disk · @status.RunningModels.Count in memory</Subtitle>
         <Actions>
             <FluentButton Appearance="ButtonAppearance.Outline" OnClick="RefreshAsync">Refresh</FluentButton>
             <FluentButton Appearance="ButtonAppearance.Outline" Disabled="@(status.LocalModels.Count == 0)" OnClick="UpdateAll"
@@ -34,7 +34,7 @@ else
     <PageHeader Title="Local models" />
 }
 
-@if (!status.IsReachable && !status.IsInitial)
+@if (status.IsOffline)
 {
     <ServerOfflineCard Reason="Installed models are listed by the Ollama server, so it has to be running to show them." />
 }
@@ -237,7 +237,8 @@ else if (status.IsReachable)
         catch (Exception operationError)
         {
             // Ollama's own message (model in use, not enough memory...) is the most useful explanation.
-            ShowFailure($"Could not {failedAction} {modelName}: {operationError.Message}");
+            // Only the latest failure is shown: it replaces the previous one.
+            failure = $"Could not {failedAction} {modelName}: {operationError.Message}";
         }
         finally
         {
@@ -248,9 +249,4 @@ else if (status.IsReachable)
         // Residency and the installed list changed: every open tab is refreshed at once.
         await StatusMonitor.ProbeNowAsync();
     }
-
-    /// <summary>Puts a failure message above the list, replacing the previous one.</summary>
-    private void ShowFailure(string message) =>
-        // Only the latest failure matters to the user.
-        failure = message;
 }

@@ -58,11 +58,11 @@
         @if (!status.IsInitial && !IsExternal(status))
         {
             <FluentButton Appearance="ButtonAppearance.Primary" Loading="@(runningAction == ServerAction.Start)"
-                          Disabled="@(runningAction is not null || Updater.Progress is { IsRunning: true } || status.Process.IsRunning || status.IsReachable)" OnClick="StartAsync">Start</FluentButton>
+                          Disabled="@(runningAction is not null || IsUpdating || status.Process.IsRunning || status.IsReachable)" OnClick="StartAsync">Start</FluentButton>
             <FluentButton Loading="@(runningAction == ServerAction.Restart)"
-                          Disabled="@(runningAction is not null || Updater.Progress is { IsRunning: true } || !status.Process.IsOwned || !status.IsReachable)" OnClick="RestartAsync">Restart</FluentButton>
+                          Disabled="@(runningAction is not null || IsUpdating || !status.Process.IsOwned || !status.IsReachable)" OnClick="RestartAsync">Restart</FluentButton>
             <FluentButton Appearance="ButtonAppearance.Outline" Loading="@(runningAction == ServerAction.Stop)"
-                          Disabled="@(runningAction is not null || Updater.Progress is { IsRunning: true } || !status.Process.IsOwned)" OnClick="StopAsync">Stop</FluentButton>
+                          Disabled="@(runningAction is not null || IsUpdating || !status.Process.IsOwned)" OnClick="StopAsync">Stop</FluentButton>
         }
     </FluentStack>
 </FluentCard>
@@ -99,7 +99,7 @@
                 {
                     <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true">
                         <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Warning" Content="@($"{update.LatestRelease.Version} available")" />
-                        @if (update.Capability is { } updateCapability && DownloadSize(update.LatestRelease, updateCapability) is { } downloadSize)
+                        @if (update.Capability is { } updateCapability && update.LatestRelease.TotalSizeOf(updateCapability.AssetNames) is { } downloadSize)
                         {
                             <FluentText Size="TextSize.Size200" Class="muted">@Display.Bytes(downloadSize)</FluentText>
                         }
@@ -131,10 +131,10 @@
 
 <FluentGrid Spacing="3" Margin="@Margin.Top4">
     <FluentGridItem Xs="12" Sm="6">
-        <StatCard Label="In memory" Value="@ModelCount(status.RunningModels.Count)" Detail="@MemoryTotals(status)" />
+        <StatCard Label="In memory" Value="@Display.Quantity(status.RunningModels.Count, "model")" Detail="@MemoryTotals(status)" />
     </FluentGridItem>
     <FluentGridItem Xs="12" Sm="6">
-        <StatCard Label="Installed" Value="@ModelCount(status.LocalModels.Count)" Detail="@($"{Display.Bytes(status.LocalModels.Where(model => !model.IsCloud()).Sum(model => model.Size))} on disk")" />
+        <StatCard Label="Installed" Value="@Display.Quantity(status.LocalModels.Count, "model")" Detail="@($"{Display.Bytes(status.LocalDiskBytes)} on disk")" />
     </FluentGridItem>
 </FluentGrid>
 
@@ -204,7 +204,10 @@
     /// <summary>Lifecycle action in progress; its button shows a progress ring and the others are disabled.</summary>
     private ServerAction? runningAction;
 
+    /// <summary>Outcome of the latest lifecycle action; a failure is shown in a message bar.</summary>
     private ServerActionResult? lastResult;
+
+    /// <summary>Tail of the Ollama server log shown in the accordion; null until the first load.</summary>
     private string? serverLog;
 
     /// <summary>When set, the log is reloaded at every status probe.</summary>
@@ -213,46 +216,61 @@
     /// <summary>Last unload error, shown in the loaded models section.</summary>
     private string? unloadFailure;
 
+    /// <summary>Models whose unload request is in flight; their buttons show a progress ring.</summary>
     private readonly HashSet<string> unloadingModels = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>True while an in-place update runs, since the server then must not be started or stopped by hand.</summary>
+    private bool IsUpdating =>
+        // The update swaps the installation under the server and restarts it by itself.
+        Updater.Progress is { IsRunning: true };
+
+    /// <summary>Subscribes the page to every monitor and loads the first log tail.</summary>
     protected override async Task OnInitializedAsync()
     {
         // Every probe updates the cards; the log follows only on request.
         Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
         Watch(handler => UpdateMonitor.Changed += handler, handler => UpdateMonitor.Changed -= handler);
         Watch(handler => Updater.Changed += handler, handler => Updater.Changed -= handler);
-        StatusMonitor.Changed += ReloadLogWhenFollowing;
-        await LoadLogAsync();
-    }
+        Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler, ReloadLogWhenFollowing);
 
-    public override void Dispose()
-    {
-        StatusMonitor.Changed -= ReloadLogWhenFollowing;
-        base.Dispose();
+        // The accordion shows the log as soon as it is opened.
+        await LoadLogAsync();
     }
 
     /// <summary>Reloads the log after a probe while "Follow" is checked.</summary>
     private void ReloadLogWhenFollowing()
     {
+        // Probes arrive on a background thread, so the reload is marshalled onto the circuit.
         if (followLog)
             _ = InvokeAsync(LoadLogAsync);
     }
 
+    /// <summary>Replaces the shown log with the latest lines of the server.</summary>
     private async Task LoadLogAsync()
     {
+        // The controller reads the log of the server that Ollamazing or the configuration points to.
         serverLog = await ServerController.GetLogsAsync();
+
+        // The call can come from a probe handler, so the new text is rendered explicitly.
         StateHasChanged();
     }
 
     /// <summary>Runs a lifecycle action off the circuit thread, since stopping waits for the process to exit.</summary>
     private async Task ExecuteAsync(ServerAction action)
     {
+        // The running action disables the buttons and animates its own.
         runningAction = action;
+
+        // The outcome is kept so a failure can be reported in the message bar.
         lastResult = await Task.Run(() => ServerController.Execute(action));
+
+        // The buttons are usable again whatever the outcome.
         runningAction = null;
 
         // The new state is published right away instead of at the next poll.
         await StatusMonitor.ProbeNowAsync();
+
+        // The log now shows what the action printed.
         await LoadLogAsync();
     }
 
@@ -277,30 +295,10 @@
 
     /// <summary>Percentage of the whole download or unpacking that is done; null when the bar cannot be determinate.</summary>
     private static int? UpdatePercent(UpdateProgress progress) =>
+        // Only the two byte-counting stages have a total to divide by.
         progress.BytesTotal is > 0 && progress.Stage is UpdateStage.Downloading or UpdateStage.Extracting
             ? (int)(progress.BytesDone * 100 / progress.BytesTotal.Value)
             : null;
-
-    /// <summary>Total download size of the archives that an in-place update fetches; null when any size is unknown.</summary>
-    private static long? DownloadSize(OllamaRelease release, UpdateCapability capability)
-    {
-        // Without archives there is nothing to measure.
-        if (capability.AssetNames.Count == 0)
-            return null;
-
-        // The archives add up to what the user will download.
-        long totalSize = 0;
-        foreach (string assetName in capability.AssetNames)
-        {
-            // One archive of unknown size makes the whole total unknown.
-            if (!release.AssetSizes.TryGetValue(assetName, out long assetSize))
-                return null;
-            totalSize += assetSize;
-        }
-
-        // Every archive was measured so the sum is the download size.
-        return totalSize;
-    }
 
     /// <summary>Plain-words description of what the running update is doing.</summary>
     private static string UpdateStageText(UpdateProgress progress) => progress.Stage switch
@@ -316,20 +314,22 @@
         // The server is coming back on the new version.
         UpdateStage.Restarting => $"Restarting (Version {progress.Version})",
         // The other stages show no progress.
-        _ => string.Empty
+        _ => ""
     };
 
+    /// <summary>Starts the Ollama server as a child of Ollamazing.</summary>
     private Task StartAsync() => ExecuteAsync(ServerAction.Start);
 
+    /// <summary>Stops and starts again the server that Ollamazing owns.</summary>
     private Task RestartAsync() => ExecuteAsync(ServerAction.Restart);
 
+    /// <summary>Stops the server that Ollamazing owns.</summary>
     private Task StopAsync() => ExecuteAsync(ServerAction.Stop);
 
-    /// <summary>A count of models with the noun agreeing, as in "1 model" or "3 models".</summary>
-    private static string ModelCount(int count) => count == 1 ? "1 model" : $"{count} models";
-
     /// <summary>True when the server runs but was started outside Ollamazing, which then cannot stop or restart it.</summary>
-    private static bool IsExternal(ServerStatus status) => !status.Process.IsOwned && (status.IsReachable || status.Process.IsRunning);
+    private static bool IsExternal(ServerStatus status) =>
+        // A live server without an owned process was started elsewhere.
+        !status.Process.IsOwned && (status.IsReachable || status.Process.IsRunning);
 
     /// <summary>Headline of the status card: whether Ollama can be used right now.</summary>
     private static string StatusTitle(ServerStatus status) => status switch
@@ -373,24 +373,30 @@
         else if (IsExternal(status))
             facts.Add("started outside Ollamazing");
 
+        // Nothing known yields null so the card shows no empty line.
         return facts.Count > 0 ? string.Join(" · ", facts) : null;
     }
 
     /// <summary>Memory taken by the loaded models, with the share on the GPU only when there is one.</summary>
     private static string MemoryTotals(ServerStatus status)
     {
+        // Total memory and the part of it held in video memory.
         long totalBytes = status.RunningModels.Sum(model => model.Size);
         long gpuBytes = status.RunningModels.Sum(model => model.SizeVram);
+
+        // The GPU share is mentioned only when some model actually uses video memory.
         return gpuBytes > 0 ? $"{Display.Bytes(totalBytes)} · {Display.Bytes(gpuBytes)} on GPU" : Display.Bytes(totalBytes);
     }
 
     /// <summary>Evicts a model from memory through OllamaSharp.</summary>
     private async Task UnloadAsync(string modelName)
     {
+        // The button of this row shows its progress ring and a previous failure is dismissed.
         unloadingModels.Add(modelName);
         unloadFailure = null;
         try
         {
+            // A zero keep-alive makes Ollama drop the model from memory.
             await OllamaClient.RequestModelUnloadAsync(modelName);
         }
         catch (Exception unloadError)
@@ -400,8 +406,11 @@
         }
         finally
         {
+            // The button is released whether the unload worked or not.
             unloadingModels.Remove(modelName);
         }
+
+        // The loaded-models table reflects the eviction right away instead of at the next poll.
         await StatusMonitor.ProbeNowAsync();
     }
 }

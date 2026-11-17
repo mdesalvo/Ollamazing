@@ -5,35 +5,39 @@
 
 <PageTitle>Downloads · Ollamazing</PageTitle>
 
+@{
+    // Each read of Jobs builds a sorted copy, so the list is read once per render.
+    IReadOnlyList<PullJob> jobs = PullManager.Jobs;
+}
 <PageHeader Title="Downloads">
     <Subtitle>@(PullManager.ActiveCount > 0 ? $"{PullManager.ActiveCount} running · downloads continue when you leave this page" : "Downloads continue when you leave this page")</Subtitle>
     <Actions>
-        @if (PullManager.Jobs.Any(job => job.IsFinished))
+        @if (jobs.Any(job => job.IsFinished))
         {
             <FluentButton Appearance="ButtonAppearance.Outline" OnClick="PullManager.ClearFinished">Clear finished</FluentButton>
         }
     </Actions>
 </PageHeader>
 
-@if (!StatusMonitor.Current.IsReachable && !StatusMonitor.Current.IsInitial)
+@if (StatusMonitor.Current.IsOffline)
 {
     <ServerOfflineCard Reason="Models are downloaded by the Ollama server, so it has to be running to pull one." Margin="@Margin.Bottom4" />
 }
 else
 {
-<SectionCard Title="Pull a model by reference" Margin="@Margin.Bottom4">
-    <form @onsubmit="PullTypedReference">
-        <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px">
-            <FluentTextInput Appearance="TextInputAppearance.FilledDarker" @bind-Value="typedReference" Immediate="true" Width="100%"
-                             Placeholder="e.g. qwen3:8b or gpt-oss:120b-cloud" AriaLabel="Model reference" />
-            <FluentButton Type="ButtonType.Submit" Appearance="ButtonAppearance.Primary"
-                          Disabled="@(!StatusMonitor.Current.IsReachable || string.IsNullOrWhiteSpace(typedReference))">Pull</FluentButton>
-        </FluentStack>
-    </form>
-</SectionCard>
+    <SectionCard Title="Pull a model by reference" Margin="@Margin.Bottom4">
+        <form @onsubmit="PullTypedReference">
+            <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px">
+                <FluentTextInput Appearance="TextInputAppearance.FilledDarker" @bind-Value="typedReference" Immediate="true" Width="100%"
+                                 Placeholder="e.g. qwen3:8b or gpt-oss:120b-cloud" AriaLabel="Model reference" />
+                <FluentButton Type="ButtonType.Submit" Appearance="ButtonAppearance.Primary"
+                              Disabled="@(!StatusMonitor.Current.IsReachable || string.IsNullOrWhiteSpace(typedReference))">Pull</FluentButton>
+            </FluentStack>
+        </form>
+    </SectionCard>
 }
 
-@if (PullManager.Jobs.Count == 0)
+@if (jobs.Count == 0)
 {
     <FluentCard>
         <FluentStack Orientation="Orientation.Vertical" HorizontalAlignment="HorizontalAlignment.Center" VerticalGap="12px">
@@ -44,7 +48,7 @@ else
 }
 
 <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
-    @foreach (PullJob job in PullManager.Jobs)
+    @foreach (PullJob job in jobs)
     {
         <FluentCard>
             <FluentStack Orientation="Orientation.Vertical" VerticalGap="8px">

@@ -9,6 +9,9 @@ public static class Display
     /// <summary>Explains that the hardware Ollama runs on is not known yet and how to make it known.</summary>
     public const string HardwareUnknown = "Ollama's hardware is not known yet: start the server from Ollamazing or set ServerControl:LogFile";
 
+    /// <summary>Unit names of <see cref="Bytes"/> from the smallest to the largest.</summary>
+    private static readonly string[] ByteUnits = ["B", "KB", "MB", "GB", "TB"];
+
     /// <summary>Formats a byte count with binary units, where a gigabyte is 1024 megabytes.</summary>
     public static string Bytes(long? bytes)
     {
@@ -17,10 +20,9 @@ public static class Display
             return "–";
 
         // Each unit is 1024 times the previous one, as memory and disks are measured on this machine.
-        string[] units = ["B", "KB", "MB", "GB", "TB"];
         double value = byteCount;
         int unitIndex = 0;
-        while (value >= 1024 && unitIndex < units.Length - 1)
+        while (value >= 1024 && unitIndex < ByteUnits.Length - 1)
         {
             value /= 1024;
             unitIndex++;
@@ -28,8 +30,13 @@ public static class Display
 
         // One decimal is kept only where it is significant, as in "5.2 GB" versus "142 GB".
         string format = value < 10 && unitIndex > 0 ? "0.#" : "0";
-        return $"{value.ToString(format, CultureInfo.InvariantCulture)} {units[unitIndex]}";
+        return $"{value.ToString(format, CultureInfo.InvariantCulture)} {ByteUnits[unitIndex]}";
     }
+
+    /// <summary>Formats a count with the noun agreeing, as in "1 tag" or "8 tags".</summary>
+    public static string Quantity(int count, string noun) =>
+        // Only the count of one keeps the noun singular.
+        count == 1 ? $"1 {noun}" : $"{count.ToString(CultureInfo.InvariantCulture)} {noun}s";
 
     /// <summary>Formats an amount in US dollars as ollama.com prints it, as in "$30.00" or "$0.006".</summary>
     public static string Price(decimal? price)
@@ -76,7 +83,9 @@ public static class Display
     /// <summary>Formats an elapsed duration compactly with its two largest units, as in "2d 4h", "3h 12m", "12m" or "5s".</summary>
     public static string Duration(TimeSpan duration) => duration switch
     {
+        // Days and hours are enough once a day has passed.
         { TotalDays: >= 1 } => $"{(int)duration.TotalDays}d {duration.Hours}h",
+        // Hours and minutes are enough once an hour has passed.
         { TotalHours: >= 1 } => $"{(int)duration.TotalHours}h {duration.Minutes}m",
         // Seconds matter only in the first minute; after it they would just flicker at every refresh.
         { TotalMinutes: >= 1 } => $"{duration.Minutes}m",

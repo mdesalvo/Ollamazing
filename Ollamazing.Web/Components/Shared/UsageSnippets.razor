@@ -36,9 +36,8 @@
     /// <summary>Builds the snippets for the current model, chat or embedding according to its kind.</summary>
     private IReadOnlyList<Snippet> BuildSnippets()
     {
-        // The model every snippet addresses and the configured server address, which loses its trailing slash so appended paths do not double it.
+        // The configured server address loses its trailing slash so appended paths do not double it.
         string baseUrl = OllamaOptions.Value.BaseUrl.TrimEnd('/');
-        string model = ModelReference;
 
         // Embedding models cannot be run from the terminal, so they get vector snippets and no Terminal tab.
         if (IsEmbedding)
@@ -47,7 +46,7 @@
             [
                 new Snippet("curl", $$"""
                     curl {{baseUrl}}/api/embed -d '{
-                      "model": "{{model}}",
+                      "model": "{{ModelReference}}",
                       "input": "Why is the sky blue?"
                     }'
                     """),
@@ -55,14 +54,14 @@
                     from ollama import Client
 
                     client = Client(host="{{baseUrl}}")
-                    response = client.embed(model="{{model}}", input="Why is the sky blue?")
+                    response = client.embed(model="{{ModelReference}}", input="Why is the sky blue?")
                     print(len(response.embeddings[0]))
                     """),
                 new Snippet("OpenAI-compatible", $$"""
                     from openai import OpenAI
 
                     client = OpenAI(base_url="{{baseUrl}}/v1", api_key="ollama")
-                    response = client.embeddings.create(model="{{model}}", input="Why is the sky blue?")
+                    response = client.embeddings.create(model="{{ModelReference}}", input="Why is the sky blue?")
                     print(len(response.data[0].embedding))
                     """)
             ];
@@ -72,11 +71,11 @@
         return
         [
             new Snippet("Terminal", $$"""
-                ollama run {{model}}
+                ollama run {{ModelReference}}
                 """),
             new Snippet("curl", $$"""
                 curl {{baseUrl}}/api/chat -d '{
-                  "model": "{{model}}",
+                  "model": "{{ModelReference}}",
                   "messages": [{ "role": "user", "content": "Why is the sky blue?" }]
                 }'
                 """),
@@ -84,14 +83,14 @@
                 from ollama import Client
 
                 client = Client(host="{{baseUrl}}")
-                response = client.chat(model="{{model}}", messages=[{"role": "user", "content": "Why is the sky blue?"}])
+                response = client.chat(model="{{ModelReference}}", messages=[{"role": "user", "content": "Why is the sky blue?"}])
                 print(response.message.content)
                 """),
             new Snippet("OpenAI-compatible", $$"""
                 from openai import OpenAI
 
                 client = OpenAI(base_url="{{baseUrl}}/v1", api_key="ollama")
-                response = client.chat.completions.create(model="{{model}}", messages=[{"role": "user", "content": "Why is the sky blue?"}])
+                response = client.chat.completions.create(model="{{ModelReference}}", messages=[{"role": "user", "content": "Why is the sky blue?"}])
                 print(response.choices[0].message.content)
                 """)
         ];

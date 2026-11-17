@@ -11,16 +11,19 @@ public abstract class LiveComponentBase : ComponentBase, IDisposable
 
     /// <summary>Re-renders this component whenever the given event fires, until the component is disposed.</summary>
     /// <example><c>Watch(handler => Monitor.Changed += handler, handler => Monitor.Changed -= handler);</c></example>
-    protected void Watch(Action<Action> subscribe, Action<Action> unsubscribe)
-    {
+    protected void Watch(Action<Action> subscribe, Action<Action> unsubscribe) =>
         // Events fire on background threads, so the render is marshalled onto the circuit dispatcher.
-        Action rerender = () => _ = InvokeAsync(StateHasChanged);
+        Watch(subscribe, unsubscribe, () => _ = InvokeAsync(StateHasChanged));
 
-        // From now on every raised event re-renders the component.
-        subscribe(rerender);
+    /// <summary>Runs the given handler whenever the event fires on the thread that raised it, until the component is disposed.</summary>
+    /// <remarks>The handler runs on the background thread of the event, so it marshals onto the circuit itself.</remarks>
+    protected void Watch(Action<Action> subscribe, Action<Action> unsubscribe, Action handler)
+    {
+        // From now on every raised event reaches the handler.
+        subscribe(handler);
 
         // The detach action is remembered so dispose removes exactly this handler from the singleton.
-        unsubscriptions.Add(() => unsubscribe(rerender));
+        unsubscriptions.Add(() => unsubscribe(handler));
     }
 
     /// <summary>Detaches every subscription so the singletons stop referencing this component.</summary>

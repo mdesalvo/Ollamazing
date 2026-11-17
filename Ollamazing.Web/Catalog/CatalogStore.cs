@@ -142,7 +142,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         SqliteParameter firstSeenAt = modelCommand.Parameters.Add("$firstSeenAt", SqliteType.Text);
 
         // The tag insert is shared with the single-model tag save.
-        await using SqliteCommand tagCommand = CreateTagInsertCommand(connection, transaction, out SqliteParameter[] tagParameters);
+        await using TagInsert tagInsert = new(connection, transaction);
 
         // Every published rate becomes one row tied to its model.
         await using SqliteCommand priceCommand = connection.CreateCommand();
@@ -181,7 +181,7 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
             await modelCommand.ExecuteNonQueryAsync(cancellationToken);
 
             // Tags go in after their model because they reference it.
-            await InsertTagsAsync(tagCommand, tagParameters, model.Name, model.Tags, cancellationToken);
+            await tagInsert.InsertAsync(model.Name, model.Tags, cancellationToken);
 
             // The list index is stored so the rates come back in the order the pricing table printed them.
             for (int position = 0; position < model.Prices.Count; position++)
@@ -234,8 +234,8 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         }
 
         // The fresh tags are inserted with their list position.
-        await using SqliteCommand tagCommand = CreateTagInsertCommand(connection, transaction, out SqliteParameter[] tagParameters);
-        await InsertTagsAsync(tagCommand, tagParameters, modelName, tags, cancellationToken);
+        await using TagInsert tagInsert = new(connection, transaction);
+        await tagInsert.InsertAsync(modelName, tags, cancellationToken);
 
         // Readers see the stamp and the fresh tags together.
         await transaction.CommitAsync(cancellationToken);
@@ -410,58 +410,84 @@ public sealed class CatalogStore(IOptions<CatalogOptions> options)
         return pricesByModel;
     }
 
-    /// <summary>Builds the tag insert command shared by a full replacement and a single-model tag save.</summary>
-    /// <param name="tagParameters">Parameters of the command in the order <see cref="InsertTagsAsync"/> fills them.</param>
-    private static SqliteCommand CreateTagInsertCommand(SqliteConnection connection, SqliteTransaction transaction, out SqliteParameter[] tagParameters)
+    /// <summary>Prepared tag insert shared by a full replacement and a single-model tag save.</summary>
+    private sealed class TagInsert : IAsyncDisposable
     {
-        // The command joins the caller's transaction so tags commit with the rest of the write.
-        SqliteCommand command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = """
-            INSERT INTO tags (full_name, model_name, position, size_bytes, context_window, inputs, digest, is_latest)
-            VALUES ($fullName, $modelName, $position, $sizeBytes, $contextWindow, $inputs, $digest, $isLatest)
-            """;
+        /// <summary>Insert command joined to the caller's transaction, run once per tag.</summary>
+        private readonly SqliteCommand command;
 
-        // The parameters are exposed in column order so InsertTagsAsync fills them by index.
-        tagParameters =
-        [
-            command.Parameters.Add("$fullName", SqliteType.Text),
-            command.Parameters.Add("$modelName", SqliteType.Text),
-            command.Parameters.Add("$position", SqliteType.Integer),
-            command.Parameters.Add("$sizeBytes", SqliteType.Integer),
-            command.Parameters.Add("$contextWindow", SqliteType.Text),
-            command.Parameters.Add("$inputs", SqliteType.Text),
-            command.Parameters.Add("$digest", SqliteType.Text),
-            command.Parameters.Add("$isLatest", SqliteType.Integer)
-        ];
+        /// <summary>Parameter of the full reference of the tag, as in "llama3:8b".</summary>
+        private readonly SqliteParameter fullName;
 
-        // The caller fills and runs the prepared insert once per tag.
-        return command;
-    }
+        /// <summary>Parameter of the name of the model the tag belongs to.</summary>
+        private readonly SqliteParameter modelName;
 
-    /// <summary>Inserts the tags of one model, storing each one's list index so the order survives a restart.</summary>
-    private static async Task InsertTagsAsync(
-        SqliteCommand tagCommand,
-        SqliteParameter[] tagParameters,
-        string modelName,
-        IReadOnlyList<CatalogTag> tags,
-        CancellationToken cancellationToken)
-    {
-        // The list index is stored as the position so the tag order survives a restart.
-        for (int position = 0; position < tags.Count; position++)
+        /// <summary>Parameter of the list index of the tag within its model.</summary>
+        private readonly SqliteParameter position;
+
+        /// <summary>Parameter of the download size in bytes; NULL for cloud tags.</summary>
+        private readonly SqliteParameter sizeBytes;
+
+        /// <summary>Parameter of the context window label.</summary>
+        private readonly SqliteParameter contextWindow;
+
+        /// <summary>Parameter of the input kinds the tag accepts.</summary>
+        private readonly SqliteParameter inputs;
+
+        /// <summary>Parameter of the digest of the tag.</summary>
+        private readonly SqliteParameter digest;
+
+        /// <summary>Parameter of the flag that marks the latest tag of the model.</summary>
+        private readonly SqliteParameter isLatest;
+
+        /// <summary>Prepares the insert on the given connection so tags commit with the rest of the caller's write.</summary>
+        public TagInsert(SqliteConnection connection, SqliteTransaction transaction)
         {
-            // The parameter order is the one fixed by CreateTagInsertCommand.
-            CatalogTag tag = tags[position];
-            tagParameters[0].Value = tag.FullName;
-            tagParameters[1].Value = modelName;
-            tagParameters[2].Value = position;
-            tagParameters[3].Value = ToDatabaseValue(tag.SizeBytes);
-            tagParameters[4].Value = ToDatabaseValue(tag.ContextWindow);
-            tagParameters[5].Value = ToDatabaseValue(tag.Inputs);
-            tagParameters[6].Value = ToDatabaseValue(tag.Digest);
-            tagParameters[7].Value = tag.IsLatest ? 1 : 0;
-            await tagCommand.ExecuteNonQueryAsync(cancellationToken);
+            // The command joins the caller's transaction so tags commit with the rest of the write.
+            command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = """
+                INSERT INTO tags (full_name, model_name, position, size_bytes, context_window, inputs, digest, is_latest)
+                VALUES ($fullName, $modelName, $position, $sizeBytes, $contextWindow, $inputs, $digest, $isLatest)
+                """;
+
+            // Each column has its own parameter so the loop fills them by name instead of by index.
+            fullName = command.Parameters.Add("$fullName", SqliteType.Text);
+            modelName = command.Parameters.Add("$modelName", SqliteType.Text);
+            position = command.Parameters.Add("$position", SqliteType.Integer);
+            sizeBytes = command.Parameters.Add("$sizeBytes", SqliteType.Integer);
+            contextWindow = command.Parameters.Add("$contextWindow", SqliteType.Text);
+            inputs = command.Parameters.Add("$inputs", SqliteType.Text);
+            digest = command.Parameters.Add("$digest", SqliteType.Text);
+            isLatest = command.Parameters.Add("$isLatest", SqliteType.Integer);
         }
+
+        /// <summary>Inserts the tags of one model, storing each one's list index so the order survives a restart.</summary>
+        public async Task InsertAsync(string modelName, IReadOnlyList<CatalogTag> tags, CancellationToken cancellationToken)
+        {
+            // The model name is the same for every tag of the call.
+            this.modelName.Value = modelName;
+
+            // The list index is stored as the position so the tag order survives a restart.
+            for (int index = 0; index < tags.Count; index++)
+            {
+                // The prepared command is reused: only the values change from one tag to the next.
+                CatalogTag tag = tags[index];
+                fullName.Value = tag.FullName;
+                position.Value = index;
+                sizeBytes.Value = ToDatabaseValue(tag.SizeBytes);
+                contextWindow.Value = ToDatabaseValue(tag.ContextWindow);
+                inputs.Value = ToDatabaseValue(tag.Inputs);
+                digest.Value = ToDatabaseValue(tag.Digest);
+                isLatest.Value = tag.IsLatest ? 1 : 0;
+                await command.ExecuteNonQueryAsync(cancellationToken);
+            }
+        }
+
+        /// <summary>Releases the insert command.</summary>
+        public ValueTask DisposeAsync() =>
+            // The command owns the prepared statement of the connection.
+            command.DisposeAsync();
     }
 
     /// <summary>Reads a rate column, where NULL means the pricing table printed a dash.</summary>

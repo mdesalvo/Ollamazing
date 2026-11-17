@@ -18,7 +18,7 @@
 {
     <FluentMessageBar Intent="MessageBarIntent.Error" Margin="@Margin.Bottom4">Catalog refresh failed: @CatalogService.LastError</FluentMessageBar>
 }
-@if (!StatusMonitor.Current.IsReachable && !StatusMonitor.Current.IsInitial)
+@if (StatusMonitor.Current.IsOffline)
 {
     <FluentMessageBar Intent="MessageBarIntent.Warning" Margin="@Margin.Bottom4">
         Ollama is offline: browsing works, downloads need the server. <FluentLink Href="server">Open the server panel</FluentLink>
@@ -31,13 +31,16 @@
     facets = query.BuildFacets(allModels);
     matchingModels = SortModels(allModels.Where(model => query.Matches(model, facets))).ToList();
     int modelsAwaitingSizes = query.CountAwaitingSizes(allModels, facets);
+
+    // The installed references are collected once per render because every tag row asks whether its tag is among them.
+    installedNames = StatusMonitor.Current.LocalModels.Select(model => model.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
 }
 
 <FluentGrid Spacing="4">
     <FluentGridItem Xs="12" Md="3" Lg="2" HiddenWhen="GridItemHidden.SmAndDown">
         <SectionCard Title="Filters">
             <Actions>
-                @if (query.HasSelections || query.IsSizeRangeActive || query.IsPriceRangeActive || query.SearchText.Length > 0)
+                @if (HasActiveFilters)
                 {
                     <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ClearAllFilters">Clear all</FluentButton>
                 }
@@ -52,7 +55,7 @@
         <FluentAccordion>
             <FluentAccordionItem Header="@FiltersHeader">
                 <FluentStack Orientation="Orientation.Vertical" VerticalGap="12px">
-                    @if (query.HasSelections || query.IsSizeRangeActive || query.IsPriceRangeActive || query.SearchText.Length > 0)
+                    @if (HasActiveFilters)
                     {
                         <FluentStack Orientation="Orientation.Horizontal">
                             <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ClearAllFilters">Clear all</FluentButton>
@@ -158,7 +161,7 @@
                             <FluentText Size="TextSize.Size200" Class="muted">@SizeSummary(model)</FluentText>
                             <FluentSpacer />
                             <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ToggleExpandedAsync(model)">
-                                @(isExpanded ? "Hide tags" : model.TagsLoadedAt is null ? "Show tags" : $"Show {TagCount(model.Tags.Count)}")
+                                @(isExpanded ? "Hide tags" : model.TagsLoadedAt is null ? "Show tags" : $"Show {Display.Quantity(model.Tags.Count, "tag")}")
                             </FluentButton>
                             <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ToggleUsage(model)">@(modelsShowingUsage.Contains(model.Name) ? "Hide usage" : "Use this model")</FluentButton>
                         </FluentStack>
@@ -206,7 +209,7 @@
                                         {
                                             <PullProgress Job="tagJob" />
                                         }
-                                        else if (InstalledNames.Contains(context.FullName))
+                                        else if (installedNames.Contains(context.FullName))
                                         {
                                             <FluentBadge Appearance="BadgeAppearance.Tint" Color="BadgeColor.Brand" Content="installed" />
                                         }
@@ -220,7 +223,7 @@
                                 {
                                     <FluentStack Orientation="Orientation.Horizontal">
                                         <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => modelsShowingAllTags.Add(model.Name)">
-                                            Show @TagCount(model.Tags.Count - visibleTags.Count) outside the current filters
+                                            Show @Display.Quantity(model.Tags.Count - visibleTags.Count, "tag") outside the current filters
                                         </FluentButton>
                                     </FluentStack>
                                 }
@@ -246,6 +249,90 @@
 </FluentGrid>
 
 @code {
+    /// <summary>Number of cards rendered per "show more" step, keeping each SignalR render diff small.</summary>
+    private const int PageSize = 40;
+
+    /// <summary>Bytes in one binary gigabyte, the unit of the memory size slider.</summary>
+    private const double BytesPerGigabyte = 1024d * 1024 * 1024;
+
+    /// <summary>Share of the inference memory up to which a tag runs comfortably, leaving room for the context and the system.</summary>
+    private const double ComfortableMemoryShare = 0.7;
+
+    /// <summary>Steps of the price sliders in dollars per million tokens, covering the rates published on ollama.com.</summary>
+    private static readonly double[] PriceStepsInDollars = [0, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, double.PositiveInfinity];
+
+    /// <summary>Slider scale in GB, denser at the small end where consumer hardware lives; the last step means "no limit".</summary>
+    private static readonly double[] SizeStepsInGigabytes = [0, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 512, double.PositiveInfinity];
+
+    /// <summary>Orders tag names naturally and ignoring case so that 1b comes before 4b and 12b.</summary>
+    private static readonly StringComparer TagNameOrder = StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering | CompareOptions.IgnoreCase);
+
+    /// <summary>Sorts the tag table by tag name in natural order.</summary>
+    private static readonly GridSort<CatalogTag> TagSort = GridSort<CatalogTag>.ByAscending(tag => tag.TagName, TagNameOrder);
+
+    /// <summary>Sorts the tag table by download size with the sizeless cloud tags last in ascending order.</summary>
+    private static readonly GridSort<CatalogTag> SizeSort = GridSort<CatalogTag>.ByAscending(tag => tag.SizeBytes ?? long.MaxValue);
+
+    /// <summary>Sorts the tag table by context window in tokens.</summary>
+    private static readonly GridSort<CatalogTag> ContextSort = GridSort<CatalogTag>.ByAscending(tag => ContextTokens(tag.ContextWindow));
+
+    /// <summary>Orders offered by the sort selector, most useful first.</summary>
+    private static readonly SortOrder[] SortOrders = Enum.GetValues<SortOrder>();
+
+    /// <summary>How a downloadable tag compares with the memory Ollama runs models in, as a badge colour, a word and the share it needs.</summary>
+    private sealed record MemoryFit(BadgeColor Color, string Label, string Hint);
+
+    /// <summary>Orderings the catalog list can take.</summary>
+    private enum SortOrder { Popular, Newest, Downloads, Smallest, Name }
+
+    /// <summary>Facet selections, search text and ranges chosen by the user.</summary>
+    private readonly CatalogQuery query = new();
+
+    /// <summary>Catalog snapshot of the current render, read by the filter controls.</summary>
+    private IReadOnlyList<CatalogModel> allModels = [];
+
+    /// <summary>Facets built from <see cref="allModels"/> in the current render, read by the filter controls.</summary>
+    private IReadOnlyList<Facet> facets = [];
+
+    /// <summary>Models on screen in the current render, which the option counts of the filter controls are taken on.</summary>
+    private IReadOnlyList<CatalogModel> matchingModels = [];
+
+    /// <summary>Full references of the installed models in the current render, used to flag tags already on the server.</summary>
+    private HashSet<string> installedNames = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Ordering chosen in the sort selector.</summary>
+    private SortOrder sortOrder = SortOrder.Popular;
+
+    /// <summary>Slider position of the lower bound of the memory size range, as an index into <see cref="SizeStepsInGigabytes"/>.</summary>
+    private int sizeLowIndex;
+
+    /// <summary>Slider position of the upper bound of the memory size range, as an index into <see cref="SizeStepsInGigabytes"/>.</summary>
+    private int sizeHighIndex = SizeStepsInGigabytes.Length - 1;
+
+    /// <summary>Slider position of the lower bound of the input price range, as an index into <see cref="PriceStepsInDollars"/>.</summary>
+    private int inputPriceLowIndex;
+
+    /// <summary>Slider position of the upper bound of the input price range, as an index into <see cref="PriceStepsInDollars"/>.</summary>
+    private int inputPriceHighIndex = PriceStepsInDollars.Length - 1;
+
+    /// <summary>Slider position of the lower bound of the output price range, as an index into <see cref="PriceStepsInDollars"/>.</summary>
+    private int outputPriceLowIndex;
+
+    /// <summary>Slider position of the upper bound of the output price range, as an index into <see cref="PriceStepsInDollars"/>.</summary>
+    private int outputPriceHighIndex = PriceStepsInDollars.Length - 1;
+
+    /// <summary>Number of cards currently rendered, raised by the "show more" button.</summary>
+    private int visibleCount = PageSize;
+
+    /// <summary>Models whose tag table is open.</summary>
+    private readonly HashSet<string> expandedModels = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Models whose "Use this model" snippets are open.</summary>
+    private readonly HashSet<string> modelsShowingUsage = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Expanded models whose tag table ignores the filters, after the user asked to see every tag.</summary>
+    private readonly HashSet<string> modelsShowingAllTags = new(StringComparer.OrdinalIgnoreCase);
+
     /// <summary>The facets and the size range, shared by the side panel and the collapsible panel of narrow windows.</summary>
     private RenderFragment FilterControls => @<text>
         @foreach (Facet facet in facets)
@@ -322,6 +409,15 @@
         </FluentStack>
     </text>;
 
+    /// <summary>Subscribes the page to the notifications that change what it shows.</summary>
+    protected override void OnInitialized()
+    {
+        // Catalog progress, download progress and the installed list all change what the page shows.
+        Watch(handler => CatalogService.Changed += handler, handler => CatalogService.Changed -= handler);
+        Watch(handler => PullManager.Changed += handler, handler => PullManager.Changed -= handler);
+        Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
+    }
+
     /// <summary>Title of the collapsible filter panel, counting the active filters so they stay visible while it is closed.</summary>
     private string FiltersHeader
     {
@@ -335,35 +431,10 @@
         }
     }
 
-    /// <summary>Number of cards rendered per "show more" step, keeping each SignalR render diff small.</summary>
-    private const int PageSize = 40;
-
-    /// <summary>Bytes in one binary gigabyte, the unit of the memory size slider.</summary>
-    private const double BytesPerGigabyte = 1024d * 1024 * 1024;
-
-    /// <summary>Steps of the price sliders in dollars per million tokens, covering the rates published on ollama.com.</summary>
-    private static readonly double[] PriceStepsInDollars = [0, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 20, double.PositiveInfinity];
-
-    /// <summary>Slider scale in GB, denser at the small end where consumer hardware lives; the last step means "no limit".</summary>
-    private static readonly double[] SizeStepsInGigabytes = [0, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 512, double.PositiveInfinity];
-
-    /// <summary>Orders tag names naturally and ignoring case so that 1b comes before 4b and 12b.</summary>
-    private static readonly StringComparer TagNameOrder = StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering | CompareOptions.IgnoreCase);
-
-    /// <summary>Sorts the tag table by tag name in natural order.</summary>
-    private static readonly GridSort<CatalogTag> TagSort = GridSort<CatalogTag>.ByAscending(tag => tag.TagName, TagNameOrder);
-
-    /// <summary>Sorts the tag table by download size with the sizeless cloud tags last in ascending order.</summary>
-    private static readonly GridSort<CatalogTag> SizeSort = GridSort<CatalogTag>.ByAscending(tag => tag.SizeBytes ?? long.MaxValue);
-
-    /// <summary>Sorts the tag table by context window in tokens.</summary>
-    private static readonly GridSort<CatalogTag> ContextSort = GridSort<CatalogTag>.ByAscending(tag => ContextTokens(tag.ContextWindow));
-
-    /// <summary>How a downloadable tag compares with the memory Ollama runs models in, as a badge colour, a word and the share it needs.</summary>
-    private sealed record MemoryFit(BadgeColor Color, string Label, string Hint);
-
-    /// <summary>Share of the inference memory up to which a tag runs comfortably, leaving room for the context and the system.</summary>
-    private const double ComfortableMemoryShare = 0.7;
+    /// <summary>True when any facet, range or search text narrows the catalog list.</summary>
+    private bool HasActiveFilters =>
+        // Every kind of narrowing counts, since each one has a control that clears it.
+        query.HasSelections || query.IsSizeRangeActive || query.IsPriceRangeActive || query.SearchText.Length > 0;
 
     /// <summary>Label of the fit shortcut, naming the memory it will use as the limit.</summary>
     private string FitButtonLabel =>
@@ -383,101 +454,6 @@
                 ? "Limit to models with a tag that fits in the VRAM of the GPU running Ollama"
                 : "Limit to models with a tag that fits in the RAM of the machine running Ollama";
 
-    /// <summary>Compares a tag with the memory Ollama runs models in; null for cloud tags or when the hardware is unknown.</summary>
-    private MemoryFit? MemoryFitOf(CatalogTag tag)
-    {
-        // Cloud tags have no weights to hold in memory.
-        if (tag.SizeBytes is not { } sizeBytes)
-            return null;
-
-        // The budget is the VRAM with a GPU and the RAM without; unknown hardware gives no verdict.
-        long? budgetBytes = StatusMonitor.Current.InferenceMemoryBytes;
-        bool onGpu = StatusMonitor.Current.HasGpu;
-        if (budgetBytes is not { } budget)
-            return null;
-
-        // Fraction of the inference memory that the weights alone occupy.
-        double memoryShare = (double)sizeBytes / budget;
-
-        // The size tooltip puts the badge in figures, so the user sees how close to the limit the tag is.
-        string hint = onGpu
-            ? $"Needs about {memoryShare.ToString("P0", CultureInfo.InvariantCulture)} of the {Display.Bytes(budget)} of VRAM of the GPU running Ollama"
-            : $"Needs about {memoryShare.ToString("P0", CultureInfo.InvariantCulture)} of the {Display.Bytes(budget)} of RAM of the machine running Ollama";
-        // The share of memory decides the verdict; anything above the whole memory does not fit.
-        return memoryShare switch
-        {
-            // Room is left for the context window and for everything else running.
-            <= ComfortableMemoryShare => new MemoryFit(BadgeColor.Success, "fits", hint),
-            // It loads, but a long context or other applications may push it out of memory.
-            <= 1 => new MemoryFit(BadgeColor.Warning, "tight", hint),
-            // It runs with part of the layers on the CPU, much slower than on the GPU.
-            _ when onGpu => new MemoryFit(BadgeColor.Warning, "CPU offload", hint),
-            // The weights alone exceed the memory the model would run in.
-            _ => new MemoryFit(BadgeColor.Danger, "too large", hint)
-        };
-    }
-
-    /// <summary>Orderings the catalog list can take.</summary>
-    private enum SortOrder { Popular, Newest, Downloads, Smallest, Name }
-
-    /// <summary>Orders offered by the sort selector, most useful first.</summary>
-    private static readonly SortOrder[] SortOrders = Enum.GetValues<SortOrder>();
-
-    /// <summary>Facet selections, search text and ranges chosen by the user.</summary>
-    private readonly CatalogQuery query = new();
-
-    /// <summary>Catalog snapshot of the current render, read by the filter controls.</summary>
-    private IReadOnlyList<CatalogModel> allModels = [];
-
-    /// <summary>Facets built from <see cref="allModels"/> in the current render, read by the filter controls.</summary>
-    private IReadOnlyList<Facet> facets = [];
-
-    /// <summary>Models on screen in the current render, which the option counts of the filter controls are taken on.</summary>
-    private IReadOnlyList<CatalogModel> matchingModels = [];
-
-    /// <summary>Ordering chosen in the sort selector.</summary>
-    private SortOrder sortOrder = SortOrder.Popular;
-
-    /// <summary>Slider position of the lower bound of the memory size range, as an index into <see cref="SizeStepsInGigabytes"/>.</summary>
-    private int sizeLowIndex;
-
-    /// <summary>Slider position of the upper bound of the memory size range, as an index into <see cref="SizeStepsInGigabytes"/>.</summary>
-    private int sizeHighIndex = SizeStepsInGigabytes.Length - 1;
-
-    /// <summary>Slider positions of the input price range, as indexes into <see cref="PriceStepsInDollars"/>.</summary>
-    private int inputPriceLowIndex;
-    private int inputPriceHighIndex = PriceStepsInDollars.Length - 1;
-
-    /// <summary>Slider positions of the output price range, as indexes into <see cref="PriceStepsInDollars"/>.</summary>
-    private int outputPriceLowIndex;
-    private int outputPriceHighIndex = PriceStepsInDollars.Length - 1;
-
-    /// <summary>Number of cards currently rendered, raised by the "show more" button.</summary>
-    private int visibleCount = PageSize;
-
-    /// <summary>Models whose tag table is open.</summary>
-    private readonly HashSet<string> expandedModels = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Models whose "Use this model" snippets are open.</summary>
-    private readonly HashSet<string> modelsShowingUsage = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Expanded models whose tag table ignores the filters, after the user asked to see every tag.</summary>
-    private readonly HashSet<string> modelsShowingAllTags = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>Subscribes the page to the notifications that change what it shows.</summary>
-    protected override void OnInitialized()
-    {
-        // Catalog progress, download progress and the installed list all change what the page shows.
-        Watch(handler => CatalogService.Changed += handler, handler => CatalogService.Changed -= handler);
-        Watch(handler => PullManager.Changed += handler, handler => PullManager.Changed -= handler);
-        Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
-    }
-
-    /// <summary>Full references of the installed models, used to flag tags already on the server.</summary>
-    private HashSet<string> InstalledNames =>
-        // References are compared without case so a tag matches however it was typed.
-        StatusMonitor.Current.LocalModels.Select(model => model.Name).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
     /// <summary>One-line state of the catalog under the page title.</summary>
     private string CatalogStatusLine
     {
@@ -496,6 +472,45 @@
                 ? $"{line} · loading sizes {modelsWithTags}/{CatalogService.Models.Count}"
                 : line;
         }
+    }
+
+    /// <summary>Compares a tag with the memory Ollama runs models in; null for cloud tags or when the hardware is unknown.</summary>
+    private MemoryFit? MemoryFitOf(CatalogTag tag)
+    {
+        // Cloud tags have no weights to hold in memory.
+        if (tag.SizeBytes is not { } sizeBytes)
+            return null;
+
+        // The budget is the VRAM with a GPU and the RAM without; unknown hardware gives no verdict.
+        long? budgetBytes = StatusMonitor.Current.InferenceMemoryBytes;
+        bool onGpu = StatusMonitor.Current.HasGpu;
+        if (budgetBytes is not { } budget)
+            return null;
+
+        // Fraction of the inference memory that the weights alone occupy.
+        double memoryShare = (double)sizeBytes / budget;
+
+        // The share is phrased once in the percentage format that the tooltip shows.
+        string sharePercent = memoryShare.ToString("P0", CultureInfo.InvariantCulture);
+
+        // The kind of memory depends on whether Ollama runs the models on a GPU.
+        string memoryPhrase = onGpu ? "VRAM of the GPU running Ollama" : "RAM of the machine running Ollama";
+
+        // The size tooltip puts the badge in figures, so the user sees how close to the limit the tag is.
+        string hint = $"Needs about {sharePercent} of the {Display.Bytes(budget)} of {memoryPhrase}";
+
+        // The share of memory decides the verdict; anything above the whole memory does not fit.
+        return memoryShare switch
+        {
+            // Room is left for the context window and for everything else running.
+            <= ComfortableMemoryShare => new MemoryFit(BadgeColor.Success, "fits", hint),
+            // It loads, but a long context or other applications may push it out of memory.
+            <= 1 => new MemoryFit(BadgeColor.Warning, "tight", hint),
+            // It runs with part of the layers on the CPU, much slower than on the GPU.
+            _ when onGpu => new MemoryFit(BadgeColor.Warning, "CPU offload", hint),
+            // The weights alone exceed the memory the model would run in.
+            _ => new MemoryFit(BadgeColor.Danger, "too large", hint)
+        };
     }
 
     /// <summary>Orders the matching models; ties keep the popularity order of ollama.com.</summary>
@@ -780,11 +795,6 @@
         return (long)Math.Round(amount * multiplier);
     }
 
-    /// <summary>A count of tags with the noun agreeing, as in "1 tag" or "8 tags".</summary>
-    private static string TagCount(int count) =>
-        // Only one takes the singular noun.
-        count == 1 ? "1 tag" : $"{count} tags";
-
     /// <summary>Opens or closes the "Use this model" snippets of a model.</summary>
     private void ToggleUsage(CatalogModel model)
     {
@@ -818,7 +828,7 @@
         // The default reference depends on the tags, which may not be loaded yet for this model.
         await CatalogService.EnsureTagsAsync(model.Name);
         // The model as it is after loading, because the tags change which reference is the default.
-        CatalogModel currentModel = CatalogService.Models.FirstOrDefault(candidate => candidate.Name == model.Name) ?? model;
+        CatalogModel currentModel = CatalogService.Find(model.Name) ?? model;
         // The download is queued under the default reference.
         PullManager.StartPull(currentModel.DefaultPullReference);
     }

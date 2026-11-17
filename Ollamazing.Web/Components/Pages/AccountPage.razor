@@ -284,7 +284,7 @@ else
         Watch(handler => AccountMonitor.Changed += handler, handler => AccountMonitor.Changed -= handler);
         Watch(handler => StatusMonitor.Changed += handler, handler => StatusMonitor.Changed -= handler);
         // A new account must also load or drop the credits, which a plain redraw would not do.
-        AccountMonitor.Changed += OnAccountChanged;
+        Watch(handler => AccountMonitor.Changed += handler, handler => AccountMonitor.Changed -= handler, OnAccountChanged);
 
         // A page opened before any check asks right away instead of waiting for the next server restart.
         if (AccountMonitor.Current is null && StatusMonitor.Current.IsReachable)
@@ -294,12 +294,9 @@ else
         await SyncWithAccountAsync();
     }
 
-    /// <summary>Detaches the page from the shared account monitor and stops the approval polling.</summary>
+    /// <summary>Stops the approval polling and detaches the page from the shared monitors.</summary>
     public override void Dispose()
     {
-        // The monitor outlives the page: a leftover handler would keep loading credits for a closed page.
-        AccountMonitor.Changed -= OnAccountChanged;
-
         // A wait still running would keep polling the server on behalf of a page nobody sees.
         pairingCancellation?.Cancel();
         pairingCancellation?.Dispose();

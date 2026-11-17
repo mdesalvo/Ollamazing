@@ -133,7 +133,8 @@ public sealed class CatalogService(
             logger.LogWarning(refreshError, "Catalog refresh failed");
 
             // The message is shown on the catalog page until the next refresh succeeds.
-            LastError = refreshError.Message;
+            lock (stateLock)
+                LastError = refreshError.Message;
         }
         finally
         {
@@ -144,6 +145,24 @@ public sealed class CatalogService(
 
         // Sizes are loaded after the list is published, so the page fills in progressively.
         await LoadMissingTagsAsync(cancellationToken);
+    }
+
+    /// <summary>Returns the model with that name ignoring case from the current snapshot; null when the catalog does not list it.</summary>
+    public CatalogModel? Find(string modelName) =>
+        // The snapshot is replaced as a whole, so reading it needs no lock.
+        models.FirstOrDefault(candidate => candidate.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Makes sure the tags of one model are loaded, fetching them right away when the user opens its details.</summary>
+    public async Task EnsureTagsAsync(string modelName, CancellationToken cancellationToken = default)
+    {
+        // Models already enriched need no request.
+        CatalogModel? model = Find(modelName);
+        if (model is null || model.TagsLoadedAt is not null)
+            // An unknown model has nothing to enrich and a loaded one is already complete.
+            return;
+
+        // The user is waiting on this model, so its tags are fetched immediately.
+        await LoadTagsAsync(modelName, cancellationToken);
     }
 
     /// <summary>Reads the cloud rates from the ollama.com pricing page.</summary>
@@ -183,19 +202,6 @@ public sealed class CatalogService(
         return previousModel is { TagsLoadedAt: not null } && previousModel.UpdatedOn == freshModel.UpdatedOn
             ? pricedModel with { Tags = previousModel.Tags, TagsLoadedAt = previousModel.TagsLoadedAt }
             : pricedModel;
-    }
-
-    /// <summary>Makes sure the tags of one model are loaded, fetching them right away when the user opens its details.</summary>
-    public async Task EnsureTagsAsync(string modelName, CancellationToken cancellationToken = default)
-    {
-        // Models already enriched need no request.
-        CatalogModel? model = models.FirstOrDefault(candidate => candidate.Name.Equals(modelName, StringComparison.OrdinalIgnoreCase));
-        if (model is null || model.TagsLoadedAt is not null)
-            // An unknown model has nothing to enrich and a loaded one is already complete.
-            return;
-
-        // The user is waiting on this model, so its tags are fetched immediately.
-        await LoadTagsAsync(modelName, cancellationToken);
     }
 
     /// <summary>Reads the tags page of every model that has none yet, with the configured parallelism.</summary>
@@ -267,7 +273,8 @@ public sealed class CatalogService(
     private void SetRefreshing(bool isRefreshing)
     {
         // The flag drives the spinner of every open catalog page.
-        IsRefreshing = isRefreshing;
+        lock (stateLock)
+            IsRefreshing = isRefreshing;
 
         // Pages re-render to show or hide the spinner.
         Changed?.Invoke();
@@ -292,6 +299,8 @@ public sealed class CatalogService(
 /// <summary>Starts the catalog load when the application boots, without delaying the first request.</summary>
 public sealed class CatalogStartupService(CatalogService catalogService) : BackgroundService
 {
-    // The returned task runs in background, so host startup does not wait for the first catalog load.
-    protected override Task ExecuteAsync(CancellationToken stoppingToken) => catalogService.InitializeAsync(stoppingToken);
+    /// <summary>Loads the stored catalog and refreshes it from ollama.com when it is missing or stale.</summary>
+    protected override Task ExecuteAsync(CancellationToken stoppingToken) =>
+        // The returned task runs in background, so host startup does not wait for the first catalog load.
+        catalogService.InitializeAsync(stoppingToken);
 }
