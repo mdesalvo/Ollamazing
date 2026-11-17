@@ -57,8 +57,6 @@ Link Ollama to your ollama.com account to run cloud models, then follow credits,
 </tr>
 </table>
 
-What changed in this version is in the [release notes](https://github.com/mdesalvo/Ollamazing/releases/latest).
-
 ## Getting started
 
 You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and [Ollama](https://ollama.com/download). Ollamazing runs on Windows, macOS and Linux.
