@@ -1,27 +1,63 @@
 <p align="center"><img src="Ollamazing.Web/wwwroot/Images/ollamazing.jpg" alt="Ollamazing: ollama handling made amazing" /></p>
 
-<p>
+<p align="center">
+  <a href="https://github.com/mdesalvo/Ollamazing/releases/latest"><img src="https://img.shields.io/github/v/release/mdesalvo/Ollamazing?color=lightblue" alt="Latest release"/></a>
   <img src="https://img.shields.io/badge/.NET-10-FFFFFF?color=lightblue" alt=".NET 10"/>
   <img src="https://img.shields.io/badge/OllamaSharp-FFFFFF?logo=nuget&color=lightblue" alt="OllamaSharp"/>
   <img src="https://img.shields.io/badge/Ollama-FFFFFF?logo=ollama&color=lightblue" alt="Ollama"/>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/mdesalvo/Ollamazing?color=lightblue" alt="Apache 2.0 license"/></a>
 </p>
 
-
-Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dashboard. Stop juggling terminal commands and browser tabs: find the right model in the ollama.com catalog with faceted filters, pull it with live progress, start and stop the server, keep your local models tidy and link your ollama.com cloud account, all in a few clicks.
+Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dashboard. Stop juggling terminal commands and browser tabs: find the right model in the ollama.com catalog, pull it with live progress, run and update the server, keep your local models tidy and link your ollama.com cloud account, all in a few clicks.
 
 ## What you can do
 
-**Find the right model.** Browse every model published on ollama.com and narrow the list by class, pricing, capabilities, parameters, memory and price per million tokens. Every tag tells you at a glance whether it fits your machine; models that just arrived carry a "new" badge.
+<table>
+<tr>
+<td width="50%" valign="top">
 
-**Get it in one click.** Pull any model with live progress. Downloads keep going while you move around the app; you can cancel them or try again.
+🔍 **Find the right model**<br/>
+Browse every model on ollama.com and narrow the list by class, capabilities, parameters, memory and price per million tokens. Each tag tells you whether it fits the GPU or the RAM that Ollama runs on.
 
-**Put it to work.** "Use this model" hands you ready-to-copy snippets for the terminal, curl, Python and any OpenAI-compatible client.
+</td>
+<td width="50%" valign="top">
 
-**Keep your models tidy.** See what is installed and what sits in memory, warm a model up before you need it, update it or remove it.
+⬇️ **Get it in one click**<br/>
+Pull any model with live progress, pause it and resume it later. Downloads keep going while you move around the app.
 
-**Stay in control of Ollama.** Start, restart and stop the server; see at a glance whether it is up, which version runs and how it uses your memory.
+</td>
+</tr>
+<tr>
+<td valign="top">
 
-**Bring in the cloud.** Link Ollama to your ollama.com account to run cloud models, then follow credits, plan and usage model by model.
+🧑‍💻 **Put it to work**<br/>
+"Use this model" hands you ready-to-copy snippets for the terminal, curl, Python and any OpenAI-compatible client.
+
+</td>
+<td valign="top">
+
+📦 **Keep your models tidy**<br/>
+See what is installed and what sits in memory; warm a model up before you need it, update it or remove it.
+
+</td>
+</tr>
+<tr>
+<td valign="top">
+
+⚙️ **Stay in control of Ollama**<br/>
+Start and stop the server, see its version and hardware at a glance and update Ollama itself in place when a new release is out.
+
+</td>
+<td valign="top">
+
+☁️ **Bring in the cloud**<br/>
+Link Ollama to your ollama.com account to run cloud models, then follow credits, plan and usage model by model.
+
+</td>
+</tr>
+</table>
+
+What changed in this version is in the [release notes](https://github.com/mdesalvo/Ollamazing/releases/latest).
 
 ## Getting started
 
@@ -31,7 +67,7 @@ You need the [.NET 10 SDK](https://dotnet.microsoft.com/download) and [Ollama](h
 dotnet run --project Ollamazing.Web
 ```
 
-Then open http://localhost:5222. If Ollama is not running yet, start it from the Server page.
+Then open http://localhost:5222. There is no need to start Ollama first: Ollamazing starts it for you when none is running.
 
 ## Your ollama.com account
 
@@ -44,7 +80,7 @@ Everything lives in `Ollamazing.Web/appsettings.json`, with defaults that suit a
 | Setting | What it does |
 |---|---|
 | `Ollama:BaseUrl` | Where Ollama listens (`http://localhost:11434` by default) |
-| `Ollama:WarmUpKeepAlive` | How long a warmed-up model stays in memory |
+| `Ollama:WarmUpKeepAlive` | How long a warmed-up model stays in memory (an hour by default) |
 | `ServerControl:StartOnLaunch` | Starts Ollama together with Ollamazing when none is running (on by default) |
 | `ServerControl:Environment` | Extra variables for the Ollama server that Ollamazing starts, such as `OLLAMA_MODELS` |
 | `Catalog:DatabasePath` | Where the catalog is kept (your user data folder by default) |
