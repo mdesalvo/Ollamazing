@@ -6,6 +6,9 @@ namespace Ollamazing.Web.Components.Shared;
 /// <summary>Formatting rules shared by every page, so sizes and times read the same everywhere.</summary>
 public static class Display
 {
+    /// <summary>Explains that the hardware Ollama runs on is not known yet and how to make it known.</summary>
+    public const string HardwareUnknown = "Ollama's hardware is not known yet: start the server from Ollamazing or set ServerControl:LogFile";
+
     /// <summary>Formats a byte count with binary units, where a gigabyte is 1024 megabytes.</summary>
     public static string Bytes(long? bytes)
     {

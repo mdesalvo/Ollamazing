@@ -8,7 +8,7 @@ using Ollamazing.Server.Lifecycle;
 
 namespace Ollamazing.Server.Status;
 
-/// <summary>Point-in-time view of the Ollama server: liveness, version, installed and resident models, hosting process.</summary>
+/// <summary>Point-in-time view of the Ollama server: liveness, version, installed and resident models, hosting process and hardware.</summary>
 public sealed record ServerStatus
 {
     /// <summary>True when the HTTP API answered the last probe.</summary>
@@ -25,6 +25,27 @@ public sealed record ServerStatus
 
     /// <summary>Models resident in memory; empty when the API is not reachable.</summary>
     public IReadOnlyList<RunningModel> RunningModels { get; init; } = [];
+
+    /// <summary>Devices Ollama detected at its latest start; null until they are known.</summary>
+    public IReadOnlyList<ComputeDevice>? ComputeDevices { get; init; }
+
+    /// <summary>True when Ollama detected at least one GPU.</summary>
+    public bool HasGpu => ComputeDevices?.Any(device => device.IsGpu) == true;
+
+    /// <summary>Memory the models must fit in to run at full speed: VRAM with a GPU and RAM without; null when unknown.</summary>
+    public long? InferenceMemoryBytes
+    {
+        get
+        {
+            // Without detected devices there is no budget to offer.
+            if (ComputeDevices is not { Count: > 0 } devices)
+                return null;
+
+            // With a GPU only the video memory counts; otherwise the processor memory is the budget.
+            bool gpuBudget = HasGpu;
+            return devices.Where(device => device.IsGpu == gpuBudget).Sum(device => device.TotalBytes);
+        }
+    }
 
     /// <summary>Moment the status was collected.</summary>
     public DateTimeOffset CheckedAt { get; init; } = DateTimeOffset.Now;
@@ -67,7 +88,8 @@ public sealed class ServerStatusMonitor(
         try
         {
             // The status is swapped as a whole, so readers never see a half-updated record.
-            Current = await ProbeAsync(cancellationToken);
+            ServerStatus probedStatus = await ProbeAsync(cancellationToken);
+            Current = probedStatus with { ComputeDevices = await ResolveComputeDevicesAsync(Current, probedStatus, cancellationToken) };
         }
         finally
         {
@@ -99,6 +121,26 @@ public sealed class ServerStatusMonitor(
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    /// <summary>Decides the compute devices of a new status: re-read when a new server lifetime may have begun and carried over otherwise.</summary>
+    private async Task<IReadOnlyList<ComputeDevice>?> ResolveComputeDevicesAsync(ServerStatus previousStatus, ServerStatus probedStatus, CancellationToken cancellationToken)
+    {
+        // An unreachable server has no fresh log to read, so the hardware of the last run stays the best knowledge.
+        if (!probedStatus.IsReachable)
+            return previousStatus.ComputeDevices;
+
+        // The log file can be large, so it is read only when a new server lifetime may have begun.
+        // An owned server with unknown devices is retried at every probe, since its log is in memory and late lines are covered.
+        bool mayHaveRestarted = !previousStatus.IsReachable
+            || previousStatus.Version != probedStatus.Version
+            || previousStatus.Process.ProcessId != probedStatus.Process.ProcessId
+            || (previousStatus.ComputeDevices is null && probedStatus.Process.IsOwned);
+        if (!mayHaveRestarted)
+            return previousStatus.ComputeDevices;
+
+        // A failed or empty read yields null, which the pages show as unknown hardware.
+        return await serverController.GetComputeDevicesAsync(cancellationToken);
     }
 
     /// <summary>Collects process state, liveness, version and model lists in one status record.</summary>

@@ -282,8 +282,8 @@
             <DualRangeSlider MaxIndex="SizeStepsInGigabytes.Length - 1" LowIndex="sizeLowIndex" HighIndex="sizeHighIndex"
                              RangeChanged="SetSizeRange" Disabled="query.IsCloudOnly" AriaLabel="Memory size" StepLabel="SizeStepLabel" />
             <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="4px" Wrap="true">
-                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Disabled="query.IsCloudOnly" OnClick="FitToMachineMemory"
-                              Title="Limit to models with a tag that fits in the memory of this machine">Fit to my RAM (@Display.Bytes(MachineMemoryBytes))</FluentButton>
+                <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Disabled="@(query.IsCloudOnly || StatusMonitor.Current.InferenceMemoryBytes is null)" OnClick="FitToInferenceMemory"
+                              Title="@FitButtonTitle">@FitButtonLabel</FluentButton>
                 @if (query.IsSizeRangeActive)
                 {
                     <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ResetSizeRange">Clear size limit</FluentButton>
@@ -347,35 +347,60 @@
     /// <summary>Slider scale in GB, denser at the small end where consumer hardware lives; the last step means "no limit".</summary>
     private static readonly double[] SizeStepsInGigabytes = [0, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 512, double.PositiveInfinity];
 
-    /// <summary>Physical memory available to this process, the reference for the "fits my RAM" shortcut.</summary>
-    private static readonly long MachineMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
-
-    /// <summary>How a downloadable tag compares with the memory of this machine, as a badge colour, a word and the share it needs.</summary>
+    /// <summary>How a downloadable tag compares with the memory Ollama runs models in, as a badge colour, a word and the share it needs.</summary>
     private sealed record MemoryFit(BadgeColor Color, string Label, string Hint);
 
-    /// <summary>Share of the machine memory up to which a tag runs comfortably, leaving room for the context and the system.</summary>
+    /// <summary>Share of the inference memory up to which a tag runs comfortably, leaving room for the context and the system.</summary>
     private const double ComfortableMemoryShare = 0.7;
 
-    /// <summary>Compares a tag with the machine memory; null for cloud tags, which run on ollama.com.</summary>
-    private static MemoryFit? MemoryFitOf(CatalogTag tag)
+    /// <summary>Label of the fit shortcut, naming the memory it will use as the limit.</summary>
+    private string FitButtonLabel =>
+        // The budget and the kind of memory come from the hardware Ollama detected.
+        StatusMonitor.Current.InferenceMemoryBytes is { } budgetBytes
+            ? StatusMonitor.Current.HasGpu
+                ? $"Fit to my GPU ({Display.Bytes(budgetBytes)} VRAM)"
+                : $"Fit to my RAM ({Display.Bytes(budgetBytes)})"
+            : "Fit to my hardware";
+
+    /// <summary>Tooltip of the fit shortcut, or the reason why it is unavailable.</summary>
+    private string FitButtonTitle =>
+        // Without a known budget the tooltip explains how to make the hardware known.
+        StatusMonitor.Current.InferenceMemoryBytes is null
+            ? Display.HardwareUnknown
+            : StatusMonitor.Current.HasGpu
+                ? "Limit to models with a tag that fits in the VRAM of the GPU running Ollama"
+                : "Limit to models with a tag that fits in the RAM of the machine running Ollama";
+
+    /// <summary>Compares a tag with the memory Ollama runs models in; null for cloud tags or when the hardware is unknown.</summary>
+    private MemoryFit? MemoryFitOf(CatalogTag tag)
     {
         // Cloud tags have no weights to hold in memory.
         if (tag.SizeBytes is not { } sizeBytes)
             return null;
 
-        // Fraction of the machine memory that the weights alone occupy.
-        double memoryShare = (double)sizeBytes / MachineMemoryBytes;
+        // The budget is the VRAM with a GPU and the RAM without; unknown hardware gives no verdict.
+        long? budgetBytes = StatusMonitor.Current.InferenceMemoryBytes;
+        bool onGpu = StatusMonitor.Current.HasGpu;
+        if (budgetBytes is not { } budget)
+            return null;
+
+        // Fraction of the inference memory that the weights alone occupy.
+        double memoryShare = (double)sizeBytes / budget;
 
         // The size tooltip puts the badge in figures, so the user sees how close to the limit the tag is.
-        string hint = $"Needs about {memoryShare.ToString("P0", CultureInfo.InvariantCulture)} of the {Display.Bytes(MachineMemoryBytes)} of memory of this machine";
-        // The share of memory decides the verdict; anything above the whole memory is too large.
+        string hint = onGpu
+            ? $"Needs about {memoryShare.ToString("P0", CultureInfo.InvariantCulture)} of the {Display.Bytes(budget)} of VRAM of the GPU running Ollama"
+            : $"Needs about {memoryShare.ToString("P0", CultureInfo.InvariantCulture)} of the {Display.Bytes(budget)} of RAM of the machine running Ollama";
+        // The share of memory decides the verdict; anything above the whole memory does not fit.
         return memoryShare switch
         {
             // Room is left for the context window and for everything else running.
             <= ComfortableMemoryShare => new MemoryFit(BadgeColor.Success, "fits", hint),
             // It loads, but a long context or other applications may push it out of memory.
             <= 1 => new MemoryFit(BadgeColor.Warning, "tight", hint),
-            // The weights alone exceed the memory of this machine.
+            // It runs with part of the layers on the CPU, much slower than on the GPU.
+            _ when onGpu => new MemoryFit(BadgeColor.Warning, "CPU offload", hint),
+            // The weights alone exceed the memory the model would run in.
             _ => new MemoryFit(BadgeColor.Danger, "too large", hint)
         };
     }
@@ -671,11 +696,15 @@
         SetOutputPriceRange((0, PriceStepsInDollars.Length - 1));
     }
 
-    /// <summary>Caps the size range at the largest step that fits in the machine memory.</summary>
-    private void FitToMachineMemory()
+    /// <summary>Caps the size range at the largest step that fits in the memory Ollama runs models in.</summary>
+    private void FitToInferenceMemory()
     {
-        // The last finite step not exceeding the physical memory becomes the upper bound.
-        double memoryInGigabytes = MachineMemoryBytes / BytesPerGigabyte;
+        // Without a known budget the shortcut has nothing to fit to.
+        if (StatusMonitor.Current.InferenceMemoryBytes is not { } budgetBytes)
+            return;
+
+        // The last finite step not exceeding the inference memory becomes the upper bound.
+        double memoryInGigabytes = budgetBytes / BytesPerGigabyte;
         int fittingIndex = Array.FindLastIndex(SizeStepsInGigabytes, step => step <= memoryInGigabytes);
 
         // The index never drops below the second step, so a machine smaller than every step still leaves a non-empty range.

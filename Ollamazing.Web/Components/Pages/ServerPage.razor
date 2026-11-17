@@ -45,6 +45,10 @@
             {
                 <FluentText Class="muted">@statusDetail</FluentText>
             }
+            @foreach (string hardwareLine in HardwareLines(status))
+            {
+                <FluentText Class="muted">@hardwareLine</FluentText>
+            }
             @if (IsExternal(status))
             {
                 <FluentText Size="TextSize.Size200" Class="muted">Stop or restart it where it was started: the desktop app, a terminal or a system service.</FluentText>
@@ -250,6 +254,25 @@
         // The new state is published right away instead of at the next poll.
         await StatusMonitor.ProbeNowAsync();
         await LoadLogAsync();
+    }
+
+    /// <summary>The hardware Ollama runs models on, one line per device.</summary>
+    private static IEnumerable<string> HardwareLines(ServerStatus status)
+    {
+        // Before the first probe nothing is known and nothing is claimed.
+        if (status.IsInitial)
+            return [];
+
+        // Unknown hardware matters only while the server is up, since a stopped one has nothing to explain.
+        if (status.ComputeDevices is null)
+            return status.IsReachable ? [Display.HardwareUnknown] : [];
+
+        // With a GPU each accelerator is listed, since the processor memory is not the budget.
+        if (status.HasGpu)
+            return status.ComputeDevices.Where(device => device.IsGpu).Select(device => $"{device.Name} · {device.Library} · {Display.Bytes(device.TotalBytes)}");
+
+        // Without a GPU the models run on the processor and its RAM.
+        return [$"CPU only · {Display.Bytes(status.InferenceMemoryBytes)}"];
     }
 
     /// <summary>Percentage of the whole download or unpacking that is done; null when the bar cannot be determinate.</summary>

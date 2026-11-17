@@ -5,6 +5,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Ollamazing.Server.Configuration;
+using Ollamazing.Server.Status;
 
 namespace Ollamazing.Server.Lifecycle;
 
@@ -49,6 +50,9 @@ public sealed class OllamaServerController : IDisposable
 
     /// <summary>Bounded buffer of the owned process output, fed by its output events.</summary>
     private readonly ConcurrentQueue<string> processLog = new();
+
+    /// <summary>Device lines of the owned server's latest start, kept apart from the bounded buffer so they never scroll out of it.</summary>
+    private readonly ConcurrentQueue<string> computeLog = new();
 
     /// <summary>Guards the owned process, since circuits issue lifecycle commands concurrently.</summary>
     private readonly Lock processLock = new();
@@ -139,6 +143,41 @@ public sealed class OllamaServerController : IDisposable
         return await ReadLogFileTailAsync(cancellationToken);
     }
 
+    /// <summary>Returns the devices Ollama detected at its latest start; null when they cannot be known.</summary>
+    public async Task<IReadOnlyList<ComputeDevice>?> GetComputeDevicesAsync(CancellationToken cancellationToken = default)
+    {
+        // A server started by Ollamazing has its device lines in memory, which is cheaper than reading the file.
+        lock (processLock)
+        {
+            if (ownedProcess is { HasExited: false })
+                return ComputeDeviceLog.ParseLastStartup(computeLog);
+        }
+
+        // Servers started elsewhere write the same lines to their log file.
+        string logFile = ResolveLogFilePath();
+
+        // Without a log file the hardware stays unknown.
+        if (!File.Exists(logFile))
+            return null;
+
+        try
+        {
+            // The server keeps the file open for writing, so it is read with shared access.
+            await using FileStream logStream = new(logFile, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            using StreamReader reader = new(logStream);
+            string content = await reader.ReadToEndAsync(cancellationToken);
+
+            // Lines are split here because the file has no line index; a Windows file leaves a carriage return on each.
+            return ComputeDeviceLog.ParseLastStartup(content.Split('\n').Select(line => line.TrimEnd('\r')));
+        }
+        catch (Exception readError) when (readError is IOException or UnauthorizedAccessException)
+        {
+            // An unreadable log leaves the hardware unknown instead of failing the probe.
+            logger.LogDebug(readError, "Reading {LogFile} for the compute devices failed", logFile);
+            return null;
+        }
+    }
+
     /// <summary>Stops the owned server on shutdown when configured, so it does not outlive the dashboard that started it.</summary>
     public void Dispose()
     {
@@ -158,10 +197,11 @@ public sealed class OllamaServerController : IDisposable
     {
         try
         {
-            // The log buffer restarts with the process, so the viewer never mixes two server lifetimes.
+            // Both log buffers restart with the process, so neither the viewer nor the hardware mixes two server lifetimes.
             // The new process is recorded as owned before the outcome is reported.
             ownedProcess?.Dispose();
             processLog.Clear();
+            computeLog.Clear();
             ownedProcess = StartOwnedProcess();
             logger.LogInformation("Started ollama serve with PID {ProcessId}", ownedProcess.Id);
             return new ServerActionResult(action, true, $"Started with PID {ownedProcess.Id}", DateTimeOffset.Now);
@@ -265,21 +305,30 @@ public sealed class OllamaServerController : IDisposable
         if (line is null)
             return;
 
+        // Device lines are also kept uncapped, since there is one per device and the hardware must outlive the scrolling buffer.
+        if (line.Contains("msg=\"inference compute\"", StringComparison.Ordinal))
+            computeLog.Enqueue(line);
+
         // The buffer is capped, so a long-running server cannot grow memory without bound.
         processLog.Enqueue(line);
         while (processLog.Count > ProcessLogCapacity)
             processLog.TryDequeue(out _);
     }
 
-    /// <summary>Reads the last lines of the server log file, from configuration or the default location of the Ollama desktop app.</summary>
-    private async Task<string> ReadLogFileTailAsync(CancellationToken cancellationToken)
-    {
+    /// <summary>Resolves the server log file, from configuration or the default location of the Ollama desktop app.</summary>
+    private string ResolveLogFilePath() =>
         // The Windows app logs under LocalApplicationData, the macOS app under ~/.ollama/logs.
-        string logFile = !string.IsNullOrWhiteSpace(controlOptions.LogFile)
+        !string.IsNullOrWhiteSpace(controlOptions.LogFile)
             ? Environment.ExpandEnvironmentVariables(controlOptions.LogFile)
             : OperatingSystem.IsWindows()
                 ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Ollama", "server.log")
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ollama", "logs", "server.log");
+
+    /// <summary>Reads the last lines of the server log file, from configuration or the default location of the Ollama desktop app.</summary>
+    private async Task<string> ReadLogFileTailAsync(CancellationToken cancellationToken)
+    {
+        // The location depends on the platform and on the configuration.
+        string logFile = ResolveLogFilePath();
 
         // A missing file is explained, so the user knows which setting to fill in.
         if (!File.Exists(logFile))
