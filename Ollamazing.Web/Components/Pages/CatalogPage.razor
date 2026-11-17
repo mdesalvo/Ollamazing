@@ -81,7 +81,7 @@
             {
                 bool isExpanded = expandedModels.Contains(model.Name);
                 int installedCount = InstalledTagCount(model);
-                <FluentCard>
+                <FluentCard @key="model.Name">
                     <FluentStack Orientation="Orientation.Vertical" VerticalGap="10px">
                         <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="8px" Wrap="true">
                             <FluentLink Href="@($"https://ollama.com/library/{model.Name}")" Target="LinkTarget.Blank" ReferrerPolicy="LinkReferrerPolicy.NoReferrer">
@@ -101,7 +101,7 @@
                             }
                             @if (model.HasPaidOption && model.CloudUsageLevel > 0)
                             {
-                                <FluentText Weight="TextWeight.Bold" Tooltip="Cloud usage cost">@(new string('$', model.CloudUsageLevel))<FluentText Class="faint">@(new string('$', 4 - model.CloudUsageLevel))</FluentText></FluentText>
+                                <FluentText Weight="TextWeight.Bold" Tooltip="@CloudCostHint(model)">@(new string('$', model.CloudUsageLevel))<FluentText Class="faint">@(new string('$', 4 - model.CloudUsageLevel))</FluentText></FluentText>
                             }
                             @foreach (string capability in model.Capabilities)
                             {
@@ -176,7 +176,7 @@
                             {
                                 List<CatalogTag> visibleTags = VisibleTags(model).ToList();
                                 <FluentDataGrid Items="visibleTags.AsQueryable()" RowSize="DataGridRowSize.Small" GridTemplateColumns="2fr 1fr 1fr 1fr 220px">
-                                    <TemplateColumn Title="Tag">
+                                    <TemplateColumn Title="Tag" SortBy="TagSort">
                                         <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="6px" VerticalAlignment="VerticalAlignment.Center">
                                             <FluentText>@context.TagName</FluentText>
                                             @if (context.IsLatest)
@@ -189,7 +189,7 @@
                                             }
                                         </FluentStack>
                                     </TemplateColumn>
-                                    <TemplateColumn Title="Size">
+                                    <TemplateColumn Title="Size" SortBy="SizeSort">
                                         <FluentStack Orientation="Orientation.Horizontal" HorizontalGap="6px" VerticalAlignment="VerticalAlignment.Center">
                                             @{ MemoryFit? memoryFit = MemoryFitOf(context); }
                                             <FluentText Tooltip="@memoryFit?.Hint">@Display.Bytes(context.SizeBytes)</FluentText>
@@ -199,7 +199,7 @@
                                             }
                                         </FluentStack>
                                     </TemplateColumn>
-                                    <TemplateColumn Title="Context">@context.ContextWindow</TemplateColumn>
+                                    <TemplateColumn Title="Context" SortBy="ContextSort">@context.ContextWindow</TemplateColumn>
                                     <TemplateColumn Title="Input">@context.Inputs</TemplateColumn>
                                     <TemplateColumn Title="" Align="DataGridCellAlignment.End">
                                         @if (PullManager.FindActive(context.FullName) is { } tagJob)
@@ -346,6 +346,18 @@
 
     /// <summary>Slider scale in GB, denser at the small end where consumer hardware lives; the last step means "no limit".</summary>
     private static readonly double[] SizeStepsInGigabytes = [0, 0.5, 1, 2, 3, 4, 6, 8, 12, 16, 24, 32, 48, 64, 96, 128, 192, 256, 512, double.PositiveInfinity];
+
+    /// <summary>Orders tag names naturally and ignoring case so that 1b comes before 4b and 12b.</summary>
+    private static readonly StringComparer TagNameOrder = StringComparer.Create(CultureInfo.InvariantCulture, CompareOptions.NumericOrdering | CompareOptions.IgnoreCase);
+
+    /// <summary>Sorts the tag table by tag name in natural order.</summary>
+    private static readonly GridSort<CatalogTag> TagSort = GridSort<CatalogTag>.ByAscending(tag => tag.TagName, TagNameOrder);
+
+    /// <summary>Sorts the tag table by download size with the sizeless cloud tags last in ascending order.</summary>
+    private static readonly GridSort<CatalogTag> SizeSort = GridSort<CatalogTag>.ByAscending(tag => tag.SizeBytes ?? long.MaxValue);
+
+    /// <summary>Sorts the tag table by context window in tokens.</summary>
+    private static readonly GridSort<CatalogTag> ContextSort = GridSort<CatalogTag>.ByAscending(tag => ContextTokens(tag.ContextWindow));
 
     /// <summary>How a downloadable tag compares with the memory Ollama runs models in, as a badge colour, a word and the share it needs.</summary>
     private sealed record MemoryFit(BadgeColor Color, string Label, string Hint);
@@ -551,6 +563,25 @@
         (null, false) => "standard"
     };
 
+    /// <summary>Tooltip of the cloud cost indicator, listing the input and output price per million tokens of each pricing row.</summary>
+    private static string CloudCostHint(CatalogModel model)
+    {
+        // Without scraped prices the indicator can only name what it stands for.
+        if (model.Prices.Count == 0)
+            return "Cloud usage cost";
+
+        // A single row needs no label to tell which rate it is.
+        if (model.Prices.Count == 1)
+        {
+            CatalogPrice price = model.Prices[0];
+            return $"Cloud usage cost per MTok (in / out): {Display.Price(price.Input)} / {Display.Price(price.Output)}";
+        }
+
+        // Several rows are told apart by their rate label.
+        IEnumerable<string> rates = model.Prices.Select(price => $"{PriceLabel(price)} {Display.Price(price.Input)} / {Display.Price(price.Output)}");
+        return "Cloud usage cost per MTok (in / out): " + string.Join(" · ", rates);
+    }
+
     /// <summary>Badge text for installed tags, counting them when more than one is on the server.</summary>
     private static string InstalledLabel(int installedCount) =>
         // The count is worth showing only when several tags of the model are installed.
@@ -719,6 +750,34 @@
         query.SearchText = "";
         ResetSizeRange();
         ResetPriceRanges();
+    }
+
+    /// <summary>Turns an ollama.com context label such as 128K or 1M into a token count used only for ordering.</summary>
+    private static long ContextTokens(string? contextWindow)
+    {
+        // A missing or placeholder label has no size to compare.
+        string label = contextWindow?.Trim() ?? "";
+        if (label.Length == 0 || label == "-")
+            return long.MaxValue;
+
+        // The suffix gives the binary multiplier of the figure in front of it.
+        long multiplier = label[^1] switch
+        {
+            // Thousands of tokens.
+            'K' or 'k' => 1024,
+            // Millions of tokens.
+            'M' or 'm' => 1024L * 1024,
+            // A bare number is already a token count.
+            _ => 1
+        };
+        string figure = multiplier == 1 ? label : label[..^1];
+
+        // An unreadable figure sorts with the unknown contexts.
+        if (!decimal.TryParse(figure, NumberStyles.Number, CultureInfo.InvariantCulture, out decimal amount))
+            return long.MaxValue;
+
+        // The rounded product is the token count the table orders by.
+        return (long)Math.Round(amount * multiplier);
     }
 
     /// <summary>A count of tags with the noun agreeing, as in "1 tag" or "8 tags".</summary>
