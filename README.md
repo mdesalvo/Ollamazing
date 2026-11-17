@@ -86,32 +86,39 @@ Cloud models are billed to the ollama.com account linked to your Ollama server. 
 
 ## Settings
 
-Everything lives in `Ollamazing.Web/appsettings.json`, with defaults that suit a local Ollama. These are the settings you are most likely to change:
+All settings live in `Ollamazing.Web/appsettings.json`. The defaults suit an Ollama on the same machine, so most people never need to touch them. Any setting can also be given on the command line:
 
-| Setting | What it does |
-|---|---|
-| `Ollama:BaseUrl` | Where Ollama listens (`http://localhost:11434` by default) |
-| `Ollama:WarmUpKeepAlive` | How long a warmed-up model stays in memory (an hour by default) |
-| `ServerControl:StartOnLaunch` | Starts Ollama together with Ollamazing when none is running (on by default) |
-| `ServerControl:Environment` | Extra variables for the Ollama server that Ollamazing starts, such as `OLLAMA_MODELS` |
-| `Catalog:DatabasePath` | Where the catalog is kept (your user data folder by default) |
+```bash
+dotnet run --project Ollamazing.Web -- --Ollama:BaseUrl=http://192.168.1.10:11434
+```
 
-<details>
-<summary>All settings</summary>
+### `Ollama` · the server Ollamazing talks to
 
-| Section | Key | Meaning |
+| Setting | Default | What it does |
 |---|---|---|
-| `Ollama` | `BaseUrl` | Address of the Ollama API |
-| | `WarmUpKeepAlive` | How long a warmed-up model stays loaded (`60m`; `-1` keeps it forever) |
-| | `StatusPollSeconds` | How often the server status is checked |
-| | `DeviceName` | Name under which ollama.com lists this server once linked (`Ollamazing` by default; empty keeps the host name) |
-| `ServerControl` | `ExecutablePath` | `ollama` executable used to start the server (looked up in PATH) |
-| | `Environment` | Extra variables for the server that Ollamazing starts |
-| | `StartOnLaunch` | Starts the server when Ollamazing boots, unless `BaseUrl` points to another machine or a server already runs or answers there |
-| | `StopOnExit` | Stops the server that Ollamazing started when Ollamazing exits |
-| | `LogFile` | Log of a server started elsewhere; empty uses the default of the Ollama desktop app |
-| `Catalog` | `DatabasePath` | Catalog database; empty uses the user data folder (`~/.local/share/Ollamazing` on Linux, `%LOCALAPPDATA%\Ollamazing` on Windows, `~/Library/Application Support/Ollamazing` on macOS) |
-| | `CacheTtlHours` | Age after which the catalog is refreshed from ollama.com |
-| | `MaxConcurrentRequests` | Parallel requests to ollama.com while sizes are loaded |
+| `BaseUrl` | `http://localhost:11434` | Address of the Ollama API; point it to another machine to drive a remote server. |
+| `WarmUpKeepAlive` | `60m` | How long **Warm up** keeps a model in memory; `-1` keeps it until the server stops. |
+| `StatusPollSeconds` | `3` | How often the dashboard checks the server. |
+| `DeviceName` | `Ollamazing` | Name ollama.com shows for this server once the account is linked; empty uses the computer name. |
 
-</details>
+### `ServerControl` · running Ollama from Ollamazing
+
+| Setting | Default | What it does |
+|---|---|---|
+| `StartOnLaunch` | `true` | Starts Ollama together with Ollamazing when no server runs on this machine. |
+| `StopOnExit` | `true` | Stops the server Ollamazing started when Ollamazing closes; a server started elsewhere is never touched. |
+| `ExecutablePath` | `ollama` | The Ollama program to run, looked up in PATH unless a full path is given. |
+| `Environment` | none | Extra variables for that server, such as `"OLLAMA_MODELS": "/data/models"`. |
+| `LogFile` | desktop app log | Log of a server started elsewhere, shown on the Server page; Ollamazing also reads from it the hardware Ollama found. |
+| `LogLines` | `200` | Lines shown by the log viewer. |
+| `UpdateCheckHours` | `24` | How often GitHub is checked for a new Ollama release; `0` turns the check off. |
+
+### `Catalog` · the ollama.com model catalog
+
+| Setting | Default | What it does |
+|---|---|---|
+| `DatabasePath` | user data folder | Where the catalog is kept: `~/.local/share/Ollamazing` on Linux, `%LOCALAPPDATA%\Ollamazing` on Windows, `~/Library/Application Support/Ollamazing` on macOS. |
+| `CacheTtlHours` | `24` | Age after which the catalog is read again from ollama.com. |
+| `MaxConcurrentRequests` | `4` | Pages read in parallel while model sizes load, kept low to be gentle with ollama.com. |
+| `BaseUrl` | `https://ollama.com` | Site the catalog is read from. |
+| `MaxPages` | `60` | Safety limit on the catalog pages read in one refresh. |
