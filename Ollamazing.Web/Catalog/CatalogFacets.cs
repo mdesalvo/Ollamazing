@@ -129,9 +129,7 @@ public sealed class CatalogQuery
             ], IsExclusive: true),
             new Facet(CapabilityFacetKey, "Capabilities", capabilityOptions),
             new Facet(ParametersFacetKey, "Parameters", ParameterBands
-                .Select(band => new FacetOption(band.Key, band.Label, model => model.ParameterSizes
-                    .Select(ParseBillions)
-                    .Any(billions => billions >= band.MinBillions && billions < band.MaxBillions)))
+                .Select(band => new FacetOption(band.Key, band.Label, model => MatchesBand(model, band.MinBillions, band.MaxBillions)))
                 .ToList(), IsExclusive: true)
         ];
     }
@@ -160,6 +158,24 @@ public sealed class CatalogQuery
     /// <summary>True when a downloadable tag falls within the size range.</summary>
     public bool IsInSizeRange(CatalogTag tag) => tag.SizeBytes is { } size && size >= MinSizeBytes && size <= MaxSizeBytes;
 
+    /// <summary>True when no parameter band is selected or the tag falls inside the selected one.</summary>
+    public bool IsInSelectedParameterBand(CatalogModel model, CatalogTag tag)
+    {
+        // Without a selected band the tag is not narrowed by parameter count.
+        string? selectedKey = SelectedOf(ParametersFacetKey)?.FirstOrDefault();
+        if (selectedKey is null)
+            return true;
+
+        // A key outside the known bands cannot narrow anything.
+        int bandIndex = Array.FindIndex(ParameterBands, band => string.Equals(band.Key, selectedKey, StringComparison.OrdinalIgnoreCase));
+        if (bandIndex < 0)
+            return true;
+
+        // The tag must hold its own parameter count inside the band; unknown counts are outside every band.
+        (string Key, string Label, double MinBillions, double MaxBillions) selectedBand = ParameterBands[bandIndex];
+        return InBand(TagBillions(model, tag), selectedBand.MinBillions, selectedBand.MaxBillions);
+    }
+
     /// <summary>Converts a parameter size badge to billions: "270m" is 0.27, "e4b" is 4, "8x7b" is 56.</summary>
     private static double ParseBillions(string parameterSize)
     {
@@ -182,6 +198,62 @@ public sealed class CatalogQuery
         };
         // The total parameter count in billions, which the bands are expressed in.
         return expertCount * amount * unitInBillions;
+    }
+
+    /// <summary>True when a parameter count in billions falls inside the band; an unknown count is never inside.</summary>
+    private static bool InBand(double billions, double minBillions, double maxBillions) => billions >= minBillions && billions < maxBillions;
+
+    /// <summary>Parameter count of the leading segment of a tag name in billions, NaN when the name does not start with a size.</summary>
+    private static double LeadingBillions(CatalogTag tag)
+    {
+        // Tag names read "8b-instruct-q4_0", so the size is whatever precedes the first dash.
+        string tagName = tag.TagName;
+        int dashIndex = tagName.IndexOf('-', StringComparison.Ordinal);
+        return ParseBillions(dashIndex < 0 ? tagName : tagName[..dashIndex]);
+    }
+
+    /// <summary>Parameter count of one tag in billions, NaN when it cannot be told.</summary>
+    private static double TagBillions(CatalogModel model, CatalogTag tag)
+    {
+        // The tag name usually states its own size.
+        double ownBillions = LeadingBillions(tag);
+        if (!double.IsNaN(ownBillions))
+            return ownBillions;
+
+        // Aliases such as "latest" share their weights with a sized tag, which the digest reveals.
+        if (!string.IsNullOrEmpty(tag.Digest))
+        {
+            // The first other tag with the same weights and a sized name gives the count.
+            foreach (CatalogTag sibling in model.Tags)
+            {
+                // Only another tag carrying the same weights can lend its size.
+                if (string.Equals(sibling.FullName, tag.FullName, StringComparison.Ordinal) || !string.Equals(sibling.Digest, tag.Digest, StringComparison.Ordinal))
+                    continue;
+
+                // A sibling with a sized name settles the count.
+                double siblingBillions = LeadingBillions(sibling);
+                if (!double.IsNaN(siblingBillions))
+                    return siblingBillions;
+            }
+        }
+
+        // A model with a single published size has only that size to offer.
+        if (model.ParameterSizes.Count == 1)
+            return ParseBillions(model.ParameterSizes[0]);
+
+        // Nothing identifies the count of this tag.
+        return double.NaN;
+    }
+
+    /// <summary>True when the model has a variant inside the band, on the same tag that fits the size range when one is active.</summary>
+    private bool MatchesBand(CatalogModel model, double minBillions, double maxBillions)
+    {
+        // With a size range the band and the size must hold on one tag; otherwise a small tag would carry a large model into a small band.
+        if (IsSizeRangeActive && !IsCloudOnly)
+            return model.LocalTags.Any(tag => IsInSizeRange(tag) && InBand(TagBillions(model, tag), minBillions, maxBillions));
+
+        // Without a size range any published parameter badge of the model may fall in the band.
+        return model.ParameterSizes.Select(ParseBillions).Any(billions => InBand(billions, minBillions, maxBillions));
     }
 
     /// <summary>Selected option keys of one facet, null when the facet was never touched.</summary>

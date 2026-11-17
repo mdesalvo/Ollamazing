@@ -524,10 +524,10 @@
         bool showsLocal = query.IsSelected(CatalogQuery.ClassFacetKey, CatalogQuery.LocalOptionKey) || !query.IsSelected(CatalogQuery.ClassFacetKey, CatalogQuery.CloudOptionKey);
         bool showsCloud = query.IsSelected(CatalogQuery.ClassFacetKey, CatalogQuery.CloudOptionKey) || !query.IsSelected(CatalogQuery.ClassFacetKey, CatalogQuery.LocalOptionKey);
 
-        // Local tags must also fall inside the size range, when one is set.
+        // Local tags must also fall inside the size range when one is set and inside the selected parameter band.
         return model.Tags.Where(tag => tag.IsCloud
             ? showsCloud
-            : showsLocal && (!query.IsSizeRangeActive || query.IsInSizeRange(tag)));
+            : showsLocal && (!query.IsSizeRangeActive || query.IsInSizeRange(tag)) && query.IsInSelectedParameterBand(model, tag));
     }
 
     /// <summary>Range of download sizes of a model, the quickest hint of the hardware it needs.</summary>
