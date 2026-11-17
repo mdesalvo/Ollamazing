@@ -10,16 +10,18 @@
 
 Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dashboard. Stop juggling terminal commands and browser tabs: find the right model in the ollama.com catalog, pull it with live progress, run and update the server, keep your local models tidy and link your ollama.com cloud account, all in a few clicks.
 
-<p align="center"><img src="docs/screenshots/catalog.png" alt="The model catalog with its filters" width="100%"/></p>
-
 <table>
 <tr>
-<td width="50%" align="center" valign="top"><img src="docs/screenshots/catalog-tags.png" alt="Tags of a model with their memory fit" width="100%"/><br/><b>Every tag tells whether it fits</b></td>
-<td width="50%" align="center" valign="top"><img src="docs/screenshots/downloads.png" alt="A download in progress" width="100%"/><br/><b>Downloads you can pause and resume</b></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/catalog.jpg" alt="The model catalog with its filters" width="100%"/><br/><b>A faceted catalog of every ollama.com model</b></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/catalog-tags.jpg" alt="Tags of a model with their memory fit" width="100%"/><br/><b>Every tag tells whether it fits</b></td>
 </tr>
 <tr>
-<td align="center" valign="top"><img src="docs/screenshots/server.png" alt="The Ollama server page" width="100%"/><br/><b>Server, hardware and updates at a glance</b></td>
-<td align="center" valign="top"><img src="docs/screenshots/account.png" alt="The ollama.com account page with a sample profile" width="100%"/><br/><b>Cloud credits and usage model by model</b></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/models.jpg" alt="Installed models with one loaded in memory" width="100%"/><br/><b>Your models, on disk and in memory</b></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/downloads.jpg" alt="A download in progress" width="100%"/><br/><b>Downloads you can pause and resume</b></td>
+</tr>
+<tr>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/server.jpg" alt="The Ollama server page" width="100%"/><br/><b>Server, hardware and updates at a glance</b></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/account.jpg" alt="The ollama.com account page with a sample profile" width="100%"/><br/><b>Cloud credits and usage model by model</b></td>
 </tr>
 </table>
 
