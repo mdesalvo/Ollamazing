@@ -10,6 +10,19 @@
 
 Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dashboard. Stop juggling terminal commands and browser tabs: find the right model in the ollama.com catalog, pull it with live progress, run and update the server, keep your local models tidy and link your ollama.com cloud account, all in a few clicks.
 
+<p align="center"><img src="docs/screenshots/catalog.png" alt="The model catalog with its filters" width="100%"/></p>
+
+<table>
+<tr>
+<td width="50%" align="center"><img src="docs/screenshots/catalog-tags.png" alt="Tags of a model with their memory fit"/><br/><sub>Every tag tells whether it fits</sub></td>
+<td width="50%" align="center"><img src="docs/screenshots/downloads.png" alt="A download in progress"/><br/><sub>Downloads you can pause and resume</sub></td>
+</tr>
+<tr>
+<td align="center"><img src="docs/screenshots/server.png" alt="The Ollama server page"/><br/><sub>Server, hardware and updates at a glance</sub></td>
+<td align="center"><img src="docs/screenshots/account.png" alt="The ollama.com account page with a sample profile"/><br/><sub>Cloud credits and usage model by model</sub></td>
+</tr>
+</table>
+
 ## What you can do
 
 <table>
