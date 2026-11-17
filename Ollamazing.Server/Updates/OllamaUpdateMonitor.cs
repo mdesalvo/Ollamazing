@@ -20,10 +20,19 @@ public sealed class OllamaUpdateMonitor : BackgroundService
     /// <summary>GitHub answers with the latest release that is neither a draft nor a prerelease.</summary>
     private const string LatestReleaseUrl = "https://api.github.com/repos/ollama/ollama/releases/latest";
 
+    /// <summary>Source of the installed version and of the moments when the server changes.</summary>
     private readonly ServerStatusMonitor statusMonitor;
+
+    /// <summary>Tells which process hosts the server when the capability of the installation is checked.</summary>
     private readonly OllamaServerController serverController;
+
+    /// <summary>Tells which server the installation belongs to.</summary>
     private readonly OllamaOptions ollamaOptions;
+
+    /// <summary>Gives the check interval and the configured executable.</summary>
     private readonly ServerControlOptions controlOptions;
+
+    /// <summary>Receives the failures of the release checks.</summary>
     private readonly ILogger<OllamaUpdateMonitor> logger;
 
     /// <summary>Client for the GitHub API; GitHub rejects requests that carry no User-Agent.</summary>
@@ -44,6 +53,7 @@ public sealed class OllamaUpdateMonitor : BackgroundService
     /// <summary>Version and hosting process seen at the previous status change, to evaluate only when they differ.</summary>
     private (string? Version, bool IsRunning, bool IsOwned) lastSeenServer;
 
+    /// <summary>Wires the monitor to the server status and prepares the GitHub client.</summary>
     public OllamaUpdateMonitor(
         ServerStatusMonitor statusMonitor,
         OllamaServerController serverController,
@@ -51,6 +61,7 @@ public sealed class OllamaUpdateMonitor : BackgroundService
         IOptions<ServerControlOptions> controlOptions,
         ILogger<OllamaUpdateMonitor> logger)
     {
+        // The collaborators and the bound option values are fixed for the lifetime of the singleton.
         this.statusMonitor = statusMonitor;
         this.serverController = serverController;
         this.ollamaOptions = ollamaOptions.Value;
@@ -78,11 +89,15 @@ public sealed class OllamaUpdateMonitor : BackgroundService
     /// <summary>Stops following the server status when the application shuts down.</summary>
     public override void Dispose()
     {
+        // A disposed monitor must not be called back by the status probe.
         statusMonitor.Changed -= OnServerStatusChanged;
+
+        // The client lives as long as the monitor.
         httpClient.Dispose();
         base.Dispose();
     }
 
+    /// <summary>Checks GitHub at startup and then on a timer until the application stops.</summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         // A disabled check never contacts GitHub.
@@ -114,6 +129,7 @@ public sealed class OllamaUpdateMonitor : BackgroundService
     {
         try
         {
+            // GitHub answers with the latest stable release or with an error status that surfaces as an exception.
             GitHubRelease? gitHubRelease = await httpClient.GetFromJsonAsync<GitHubRelease>(LatestReleaseUrl, cancellationToken);
 
             // A release without tag or page cannot be compared or shown.
@@ -137,7 +153,6 @@ public sealed class OllamaUpdateMonitor : BackgroundService
                 gitHubRelease.TagName,
                 gitHubRelease.HtmlUrl,
                 gitHubRelease.PublishedAt,
-                (gitHubRelease.Assets ?? []).Select(asset => asset.Name).ToList(),
                 assetSizes);
             checkedAt = DateTimeOffset.Now;
             lastError = null;
@@ -153,6 +168,7 @@ public sealed class OllamaUpdateMonitor : BackgroundService
     /// <summary>Compares the installed version with the stored release and decides how an update could be applied.</summary>
     private void Evaluate()
     {
+        // The check thread and the status thread may evaluate together and must not publish out of order.
         lock (evaluationLock)
         {
             // The installed version is known only while the server answers.
@@ -170,6 +186,7 @@ public sealed class OllamaUpdateMonitor : BackgroundService
                 ? null
                 : UpdateCapabilityDetector.Detect(ollamaOptions, controlOptions, serverController.GetProcessState(), knownRelease);
 
+            // The pages read the outcome as a whole so the new status replaces the previous one in a single step.
             Current = new OllamaUpdateStatus
             {
                 InstalledVersion = installedVersion,
@@ -220,15 +237,19 @@ public sealed class OllamaUpdateMonitor : BackgroundService
     /// <summary>Release as GitHub serialises it, reduced to the fields in use.</summary>
     private sealed class GitHubRelease
     {
+        /// <summary>Tag of the release such as "v0.40.14".</summary>
         [JsonPropertyName("tag_name")]
         public string? TagName { get; set; }
 
+        /// <summary>Page of the release on GitHub.</summary>
         [JsonPropertyName("html_url")]
         public string? HtmlUrl { get; set; }
 
+        /// <summary>When GitHub published the release.</summary>
         [JsonPropertyName("published_at")]
         public DateTimeOffset PublishedAt { get; set; }
 
+        /// <summary>Archives attached to the release; null when GitHub omits them.</summary>
         [JsonPropertyName("assets")]
         public List<GitHubAsset>? Assets { get; set; }
     }
@@ -236,8 +257,9 @@ public sealed class OllamaUpdateMonitor : BackgroundService
     /// <summary>Archive attached to a GitHub release.</summary>
     private sealed class GitHubAsset
     {
+        /// <summary>File name of the archive.</summary>
         [JsonPropertyName("name")]
-        public string Name { get; set; } = string.Empty;
+        public string Name { get; set; } = "";
 
         /// <summary>Size of the archive in bytes.</summary>
         [JsonPropertyName("size")]

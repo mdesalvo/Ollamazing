@@ -4,6 +4,7 @@ using Microsoft.Extensions.Options;
 using OllamaSharp;
 using OllamaSharp.Models;
 using Ollamazing.Server.Configuration;
+using Ollamazing.Server.Extensions;
 using Ollamazing.Server.Lifecycle;
 
 namespace Ollamazing.Server.Status;
@@ -46,6 +47,12 @@ public sealed record ServerStatus
             return devices.Where(device => device.IsGpu == gpuBudget).Sum(device => device.TotalBytes);
         }
     }
+
+    /// <summary>True when the server is known to be down, as opposed to not checked yet.</summary>
+    public bool IsOffline => !IsInitial && !IsReachable;
+
+    /// <summary>Disk taken by the installed weights; cloud entries have none.</summary>
+    public long LocalDiskBytes => LocalModels.Where(model => !model.IsCloud()).Sum(model => model.Size);
 
     /// <summary>Moment the status was collected.</summary>
     public DateTimeOffset CheckedAt { get; init; } = DateTimeOffset.Now;

@@ -33,11 +33,22 @@ public sealed class OllamaUpdater : IDisposable
     /// <summary>Pause between two probes while waiting for the restarted server.</summary>
     private static readonly TimeSpan ServerProbeInterval = TimeSpan.FromSeconds(1);
 
+    /// <summary>Source of the release to install and of the verdict that an update is available.</summary>
     private readonly OllamaUpdateMonitor updateMonitor;
+
+    /// <summary>Probed after the swap to learn whether the restarted server reports the new version.</summary>
     private readonly ServerStatusMonitor statusMonitor;
+
+    /// <summary>Stops the server before the swap and starts it again on the new files.</summary>
     private readonly OllamaServerController serverController;
+
+    /// <summary>Tells which server the installation belongs to.</summary>
     private readonly OllamaOptions ollamaOptions;
+
+    /// <summary>Gives the configured executable that locates the installation to update.</summary>
     private readonly ServerControlOptions controlOptions;
+
+    /// <summary>Receives the failures of the update and of its rollback.</summary>
     private readonly ILogger<OllamaUpdater> logger;
 
     /// <summary>Client for the release downloads; the infinite timeout lets archives of several gigabytes stream to the end.</summary>
@@ -55,6 +66,7 @@ public sealed class OllamaUpdater : IDisposable
     /// <summary>True when a rollback of the current run could not restore every file.</summary>
     private bool rollbackFailed;
 
+    /// <summary>Wires the updater to the monitors and to the server controller that the update relies on.</summary>
     public OllamaUpdater(
         OllamaUpdateMonitor updateMonitor,
         ServerStatusMonitor statusMonitor,
@@ -63,6 +75,7 @@ public sealed class OllamaUpdater : IDisposable
         IOptions<ServerControlOptions> controlOptions,
         ILogger<OllamaUpdater> logger)
     {
+        // The collaborators and the bound option values are fixed for the lifetime of the singleton.
         this.updateMonitor = updateMonitor;
         this.statusMonitor = statusMonitor;
         this.serverController = serverController;
@@ -94,7 +107,7 @@ public sealed class OllamaUpdater : IDisposable
             // The run publishes its first state before the lock opens so a second click finds it running.
             runCancellation = new CancellationTokenSource();
             runToken = runCancellation.Token;
-            Progress = new UpdateProgress(updateMonitor.Current.LatestRelease?.Version ?? string.Empty, UpdateStage.Downloading, null, 0, null, null, null);
+            Progress = new UpdateProgress(updateMonitor.Current.LatestRelease?.Version ?? "", UpdateStage.Downloading, null, 0, null, null, null);
         }
 
         // The update runs detached from the requesting circuit which may disconnect long before it ends.
@@ -113,14 +126,20 @@ public sealed class OllamaUpdater : IDisposable
     /// <summary>Cancels a running update and releases the download client.</summary>
     public void Dispose()
     {
+        // A run still in flight stops instead of writing into a disposed client.
         runCancellation?.Cancel();
+
+        // The client lives as long as the singleton.
         httpClient.Dispose();
     }
 
     /// <summary>Runs every step of the update and publishes how it ended.</summary>
     private async Task RunAsync(CancellationToken cancellationToken)
     {
+        // The staging folder is unknown until the installation is located so the handlers below can tell that nothing was written yet.
         string? stagingRoot = null;
+
+        // A rollback failure of an earlier run must not leak into this one.
         rollbackFailed = false;
         try
         {
@@ -152,18 +171,7 @@ public sealed class OllamaUpdater : IDisposable
             Dictionary<string, string> checksums = await DownloadChecksumsAsync(release, capability.AssetNames, cancellationToken);
 
             // One bar covers every archive so the total is known up front when the release publishes all their sizes.
-            long? downloadTotal = 0;
-            foreach (string assetName in capability.AssetNames)
-            {
-                // A single missing size makes the total unknown.
-                if (release.AssetSizes.TryGetValue(assetName, out long assetSize))
-                    downloadTotal += assetSize;
-                else
-                {
-                    downloadTotal = null;
-                    break;
-                }
-            }
+            long? downloadTotal = release.TotalSizeOf(capability.AssetNames);
 
             // Archives are fetched in order so later companions can overwrite files of the main archive.
             long downloadedBytes = 0;
@@ -239,11 +247,8 @@ public sealed class OllamaUpdater : IDisposable
         }
 
         // An archive without a checksum cannot be trusted so the update does not start.
-        foreach (string assetName in assetNames)
-        {
-            if (!checksums.ContainsKey(assetName))
-                throw new UpdateException($"Release {release.Version} publishes no checksum for {assetName}.");
-        }
+        if (assetNames.FirstOrDefault(assetName => !checksums.ContainsKey(assetName)) is { } uncheckedAssetName)
+            throw new UpdateException($"Release {release.Version} publishes no checksum for {uncheckedAssetName}.");
 
         // The caller indexes the list by archive name.
         return checksums;
@@ -254,6 +259,8 @@ public sealed class OllamaUpdater : IDisposable
     {
         // Headers are enough to start: the body streams straight to disk.
         using HttpResponseMessage response = await httpClient.GetAsync(AssetUrl(release, assetName), HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+
+        // An error page must never be saved as an archive.
         response.EnsureSuccessStatusCode();
 
         // The bar spans all the archives when their total is known.
@@ -266,6 +273,7 @@ public sealed class OllamaUpdater : IDisposable
         }
         ReportStage(UpdateStage.Downloading, assetName, bytesBefore, bytesTotal);
 
+        // The body is copied to the downloads folder under the name of the asset that the checksum list uses.
         await using Stream body = await response.Content.ReadAsStreamAsync(cancellationToken);
         await using FileStream archiveFile = new(Path.Combine(downloadsFolder, assetName), FileMode.Create, FileAccess.Write, FileShare.None, DownloadChunkSize, useAsync: true);
 
@@ -386,6 +394,7 @@ public sealed class OllamaUpdater : IDisposable
         // The swap cannot replace files under a running server.
         if (wasRunning)
         {
+            // A server that refuses to stop leaves the installation untouched so the update ends here.
             ServerActionResult stopResult = serverController.Execute(ServerAction.Stop);
             if (!stopResult.Succeeded)
                 throw new UpdateException(stopResult.Message);
@@ -396,51 +405,56 @@ public sealed class OllamaUpdater : IDisposable
         string previousLibraries = Path.Combine(stagingRoot, "previous-lib");
         string previousExecutable = Path.Combine(stagingRoot, "previous-" + Path.GetFileName(executablePath));
 
-        // Each flag records a completed move so a rollback undoes exactly what happened.
-        bool librariesMoved = false;
-        bool executableMoved = false;
-        bool newLibrariesPlaced = false;
-        bool newExecutablePlaced = false;
+        // Each completed move pushes its undo so a rollback pops exactly what happened in reverse order.
+        Stack<(Action Undo, string Description)> undoSteps = new();
         try
         {
             // The installed libraries step aside first.
             Directory.Move(installedLibraries, previousLibraries);
-            librariesMoved = true;
+            undoSteps.Push((() => Directory.Move(previousLibraries, installedLibraries), "restoring the previous libraries"));
 
             // The installed binary follows them.
             File.Move(executablePath, previousExecutable);
-            executableMoved = true;
+            undoSteps.Push((() => File.Move(previousExecutable, executablePath), "restoring the previous binary"));
 
             // The new libraries take the place of the old ones.
             Directory.Move(newLibraries, installedLibraries);
-            newLibrariesPlaced = true;
+            undoSteps.Push((() => Directory.Delete(installedLibraries, recursive: true), "removing the new libraries"));
 
             // The new binary goes where the old one was so the configured path keeps working.
             File.Move(newExecutable, executablePath);
-            newExecutablePlaced = true;
+            undoSteps.Push((() => File.Delete(executablePath), "removing the new binary"));
         }
         catch (Exception swapError) when (swapError is IOException or UnauthorizedAccessException)
         {
             // The installation goes back to the previous version and the server comes back on it.
-            RollBack(executablePath, installedLibraries, previousLibraries, previousExecutable, librariesMoved, executableMoved, newLibrariesPlaced, newExecutablePlaced);
+            RollBack(undoSteps);
+
+            // The previous server is started again only when its files are back in place.
             if (wasRunning && !rollbackFailed)
                 serverController.Execute(ServerAction.Start);
-            throw new UpdateException($"Installing the new files failed: {swapError.Message}" + (rollbackFailed ? string.Empty : " The previous version was restored."));
+            throw new UpdateException($"Installing the new files failed: {swapError.Message}{RestoredSuffix}");
         }
 
         // A server that was stopped for the swap must come back on the new version.
         if (!wasRunning)
             return;
+
+        // The pages show that the new version is being started.
         ReportStage(UpdateStage.Restarting, null, 0, null);
+
+        // A server that reports the new version proves the installation works.
         if (await StartAndWaitForVersionAsync(release.Version, cancellationToken))
             return;
 
         // The new version does not come up so the previous one takes its place again.
         serverController.Execute(ServerAction.Stop);
-        RollBack(executablePath, installedLibraries, previousLibraries, previousExecutable, true, true, true, true);
+        RollBack(undoSteps);
+
+        // The previous server is started again only when its files are back in place.
         if (!rollbackFailed)
             serverController.Execute(ServerAction.Start);
-        throw new UpdateException($"Ollama {release.Version} did not start." + (rollbackFailed ? string.Empty : " The previous version was restored."));
+        throw new UpdateException($"Ollama {release.Version} did not start.{RestoredSuffix}");
     }
 
     /// <summary>Starts the server and waits until it reports the wanted version; false when it does not within the timeout.</summary>
@@ -466,26 +480,15 @@ public sealed class OllamaUpdater : IDisposable
         return false;
     }
 
+    /// <summary>Ending of an error message that says whether the previous version is back after a rollback.</summary>
+    private string RestoredSuffix => rollbackFailed ? "" : " The previous version was restored.";
+
     /// <summary>Undoes in reverse order the moves that completed and records when a file could not be restored.</summary>
-    private void RollBack(
-        string executablePath,
-        string installedLibraries,
-        string previousLibraries,
-        string previousExecutable,
-        bool librariesMoved,
-        bool executableMoved,
-        bool newLibrariesPlaced,
-        bool newExecutablePlaced)
+    private void RollBack(Stack<(Action Undo, string Description)> undoSteps)
     {
         // Each undo is isolated so one failure still lets the others restore what they can.
-        if (newExecutablePlaced)
-            TryUndo(() => File.Delete(executablePath), "removing the new binary");
-        if (newLibrariesPlaced)
-            TryUndo(() => Directory.Delete(installedLibraries, recursive: true), "removing the new libraries");
-        if (executableMoved)
-            TryUndo(() => File.Move(previousExecutable, executablePath), "restoring the previous binary");
-        if (librariesMoved)
-            TryUndo(() => Directory.Move(previousLibraries, installedLibraries), "restoring the previous libraries");
+        while (undoSteps.TryPop(out (Action Undo, string Description) step))
+            TryUndo(step.Undo, step.Description);
     }
 
     /// <summary>Runs one rollback step and logs its failure instead of throwing.</summary>
@@ -493,6 +496,7 @@ public sealed class OllamaUpdater : IDisposable
     {
         try
         {
+            // The step puts back or removes one file or folder of the swap.
             undoStep();
         }
         catch (Exception undoError)
@@ -536,7 +540,7 @@ public sealed class OllamaUpdater : IDisposable
     private void ReportStage(UpdateStage stage, string? assetName, long bytesDone, long? bytesTotal)
     {
         // A stage change always reaches the pages.
-        Progress = new UpdateProgress(Progress?.Version ?? string.Empty, stage, assetName, bytesDone, bytesTotal, null, null);
+        Progress = new UpdateProgress(Progress?.Version ?? "", stage, assetName, bytesDone, bytesTotal, null, null);
         lastNotification = DateTimeOffset.UtcNow;
         Changed?.Invoke();
     }
@@ -561,7 +565,7 @@ public sealed class OllamaUpdater : IDisposable
     private void Finish(UpdateStage stage, string? error)
     {
         // The final state is never throttled.
-        Progress = new UpdateProgress(Progress?.Version ?? string.Empty, stage, null, 0, null, error, DateTimeOffset.Now);
+        Progress = new UpdateProgress(Progress?.Version ?? "", stage, null, 0, null, error, DateTimeOffset.Now);
         Changed?.Invoke();
     }
 

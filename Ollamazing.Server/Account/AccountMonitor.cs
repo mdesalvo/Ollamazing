@@ -11,8 +11,13 @@ namespace Ollamazing.Server.Account;
 /// <remarks>Singleton: the link belongs to the server key, so every tab and the sidebar share the same answer.</remarks>
 public sealed class AccountMonitor : IDisposable
 {
+    /// <summary>Asks the server about the linked account and signs it out.</summary>
     private readonly IOllamaApiClient ollamaClient;
+
+    /// <summary>Tells whether the server is reachable and when that changes.</summary>
     private readonly ServerStatusMonitor statusMonitor;
+
+    /// <summary>Receives the failures of the account checks.</summary>
     private readonly ILogger<AccountMonitor> logger;
 
     /// <summary>Name proposed to ollama.com for this server in place of the host name chosen by Ollama.</summary>

@@ -83,61 +83,81 @@ public sealed class PullManager(IOllamaApiClient ollamaClient, ServerStatusMonit
     }
 
     /// <summary>Number of downloads still running.</summary>
-    public int ActiveCount => Jobs.Count(job => job.IsActive);
+    public int ActiveCount
+    {
+        get
+        {
+            // The header counts the running pulls at every redraw, so the list is read in place while the pull tasks change it.
+            lock (jobsLock)
+                return jobs.Count(job => job.IsActive);
+        }
+    }
 
     /// <summary>Running job for a reference, used by pages to show inline progress next to the model.</summary>
-    public PullJob? FindActive(string modelReference) => Jobs.FirstOrDefault(job => job.IsActive
-        && job.ModelReference.Equals(modelReference, StringComparison.OrdinalIgnoreCase));
+    public PullJob? FindActive(string modelReference)
+    {
+        // Pages ask on every redraw while pull tasks change the list, so the search runs under the lock.
+        lock (jobsLock)
+            return jobs.FirstOrDefault(job => job.IsActive && job.ModelReference.Equals(modelReference, StringComparison.OrdinalIgnoreCase));
+    }
 
     /// <summary>Starts downloading a model, or returns the running job when the same reference is already being pulled; a paused job of that reference is resumed.</summary>
     /// <remarks>Also used to update an installed model: pulling again fetches only the layers that changed.</remarks>
     public PullJob StartPull(string modelReference)
     {
-        // The job is declared outside the lock because it is started and returned after the lock is released.
+        // The job is registered under the trimmed reference so " llama3 " and "llama3" are the same pull.
+        string reference = modelReference.Trim();
+
+        // The job and the resume flag are declared outside the lock because they are used after it is released.
         PullJob job;
-        PullJob? existingJob;
+        bool isResume;
         lock (jobsLock)
         {
             // Two pulls of the same model would compete for the same blobs on the server.
-            existingJob = jobs.FirstOrDefault(candidate => (candidate.IsActive || candidate.IsPaused)
-                && candidate.ModelReference.Equals(modelReference.Trim(), StringComparison.OrdinalIgnoreCase));
+            PullJob? existingJob = jobs.FirstOrDefault(candidate => (candidate.IsActive || candidate.IsPaused) && candidate.ModelReference.Equals(reference, StringComparison.OrdinalIgnoreCase));
 
             // A running pull of the same reference already does what the caller asks.
             if (existingJob is { IsActive: true })
                 return existingJob;
 
-            if (existingJob is not null)
-            {
-                // A paused pull is continued below, outside the lock, because the resume takes the lock itself.
-                job = existingJob;
-            }
-            else
-            {
-                // No equivalent pull exists, so the new job is registered under the trimmed reference.
-                job = new PullJob { ModelReference = modelReference.Trim() };
+            // Only a paused pull can be left here so it is continued below.
+            isResume = existingJob is not null;
+
+            // No equivalent pull exists when nothing was found, so the new job is registered.
+            job = existingJob ?? new PullJob { ModelReference = reference };
+            if (!isResume)
                 jobs.Add(job);
-            }
         }
 
         // Ollama continues from the partial blobs the paused pull left behind, in the same card.
-        if (existingJob is not null)
+        if (isResume)
         {
-            Resume(existingJob.Id);
-            return existingJob;
+            // The resume runs outside the lock because it takes the lock itself.
+            Resume(job.Id);
+            return job;
         }
 
         // The pull runs detached from the requesting circuit, which may disconnect long before it ends.
-        // Subscribers learn about the new job before the caller gets it back.
         _ = Task.Run(() => RunPullAsync(job));
+
+        // Subscribers learn about the new job before the caller gets it back.
         Changed?.Invoke();
         return job;
+    }
+
+    /// <summary>Looks a job up by its identifier; null when the list no longer holds it.</summary>
+    private PullJob? FindJob(Guid jobId)
+    {
+        // The lookup runs under the lock because pull tasks and circuits change the list concurrently.
+        lock (jobsLock)
+            return jobs.FirstOrDefault(job => job.Id == jobId);
     }
 
     /// <summary>Stops a running download and keeps it in the list as paused; Ollama keeps the partial blobs for the resume.</summary>
     public void Pause(Guid jobId)
     {
         // Unknown jobs and jobs that are not running have nothing left to pause.
-        PullJob? job = Jobs.FirstOrDefault(candidate => candidate.Id == jobId);
+        PullJob? job = FindJob(jobId);
         if (job is { IsActive: true })
         {
             // The flag is set first so the pull task records the stop as a pause when the stream aborts.
@@ -172,7 +192,7 @@ public sealed class PullManager(IOllamaApiClient ollamaClient, ServerStatusMonit
     public void Cancel(Guid jobId)
     {
         // Unknown or finished jobs have nothing left to cancel.
-        PullJob? job = Jobs.FirstOrDefault(candidate => candidate.Id == jobId);
+        PullJob? job = FindJob(jobId);
         if (job is { IsActive: true })
         {
             // A Cancel that follows a Pause still in flight wins, so the stop is recorded as a cancellation.

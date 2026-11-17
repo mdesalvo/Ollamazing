@@ -25,7 +25,7 @@ public static class UpdateCapabilityDetector
             return NotifyOnly($"The executable '{controlOptions.ExecutablePath}' was not found.", null, null);
 
         // The files of the executable's folder tell which kind of installation this is.
-        string executableFolder = Path.GetDirectoryName(executablePath) ?? string.Empty;
+        string executableFolder = Path.GetDirectoryName(executablePath) ?? "";
 
         // The desktop app ships its own updater and would fight an update made from here.
         if (executablePath.Contains(".app/Contents/", StringComparison.Ordinal) || File.Exists(Path.Combine(executableFolder, "ollama app.exe")))
@@ -46,14 +46,14 @@ public static class UpdateCapabilityDetector
 
         // The release must publish the archive that matches this machine.
         string? expectedAssetName = ExpectedAssetName();
-        if (expectedAssetName is null || !release.AssetNames.Contains(expectedAssetName, StringComparer.Ordinal))
+        if (expectedAssetName is null || !release.AssetSizes.ContainsKey(expectedAssetName))
             return NotifyOnly($"Release {release.Version} has no archive for {RuntimeInformation.RuntimeIdentifier}.", executablePath, installRoot);
 
         // An update wipes lib/ollama, so every companion archive whose libraries are installed must be downloaded again.
-        List<string> assetNames = [expectedAssetName, .. CompanionAssetNames(installRoot, expectedAssetName, release.AssetNames)];
+        List<string> assetNames = [expectedAssetName, .. CompanionAssetNames(installRoot, expectedAssetName, release.AssetSizes.Keys)];
 
         // An update creates its staging folder in the installation root, swaps lib/ollama by renaming it inside lib and replaces the binary in its folder.
-        string[] foldersToProbe = new[] { executableFolder, installRoot, Path.Combine(installRoot, "lib"), Path.Combine(installRoot, "lib", "ollama") }.Distinct(StringComparer.Ordinal).ToArray();
+        string[] foldersToProbe = [.. new[] { executableFolder, installRoot, Path.Combine(installRoot, "lib"), Path.Combine(installRoot, "lib", "ollama") }.Distinct(StringComparer.Ordinal)];
         foreach (string folderToProbe in foldersToProbe)
         {
             if (!CanWriteTo(folderToProbe))
@@ -107,7 +107,7 @@ public static class UpdateCapabilityDetector
         }
 
         // A bare name is looked up in every PATH folder in order; the first match is the one a shell would run.
-        string[] searchFolders = (Environment.GetEnvironmentVariable("PATH") ?? string.Empty).Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
+        string[] searchFolders = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator, StringSplitOptions.RemoveEmptyEntries);
         foreach (string searchFolder in searchFolders)
         {
             // Windows runs "ollama" as "ollama.exe" when the name has no extension.
@@ -165,7 +165,7 @@ public static class UpdateCapabilityDetector
     }
 
     /// <summary>Returns the companion archives of the release whose libraries are already installed.</summary>
-    private static IReadOnlyList<string> CompanionAssetNames(string installRoot, string mainAssetName, IReadOnlyList<string> releaseAssetNames)
+    private static IReadOnlyList<string> CompanionAssetNames(string installRoot, string mainAssetName, IEnumerable<string> releaseAssetNames)
     {
         // Companion archives share the stem of the main archive and its extension.
         string[] knownExtensions = [".tar.zst", ".zip"];

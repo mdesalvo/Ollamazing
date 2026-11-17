@@ -5,9 +5,30 @@ namespace Ollamazing.Server.Updates;
 /// <param name="Tag">Release tag as published on GitHub, such as "v0.40.14", which names the download folder of its assets.</param>
 /// <param name="Url">Page of the release on GitHub, which holds its notes.</param>
 /// <param name="PublishedAt">When GitHub published the release.</param>
-/// <param name="AssetNames">File names of the archives attached to the release.</param>
-/// <param name="AssetSizes">Size in bytes of every archive attached to the release, by file name.</param>
-public sealed record OllamaRelease(string Version, string Tag, string Url, DateTimeOffset PublishedAt, IReadOnlyList<string> AssetNames, IReadOnlyDictionary<string, long> AssetSizes);
+/// <param name="AssetSizes">Size in bytes of every archive attached to the release by file name; its keys also list the archives.</param>
+public sealed record OllamaRelease(string Version, string Tag, string Url, DateTimeOffset PublishedAt, IReadOnlyDictionary<string, long> AssetSizes)
+{
+    /// <summary>Sums the sizes of the named archives; null when the sequence is empty or the release does not publish one of them.</summary>
+    public long? TotalSizeOf(IEnumerable<string> assetNames)
+    {
+        // The sum starts empty and the flag tells an empty sequence from a total of zero bytes.
+        long totalBytes = 0;
+        bool hasAsset = false;
+        foreach (string assetName in assetNames)
+        {
+            // A single missing size makes the whole total unknown.
+            if (!AssetSizes.TryGetValue(assetName, out long assetSize))
+                return null;
+
+            // The archive adds its size to the download.
+            totalBytes += assetSize;
+            hasAsset = true;
+        }
+
+        // Nothing to download has no total to show.
+        return hasAsset ? totalBytes : null;
+    }
+}
 
 /// <summary>What Ollamazing can do about a newer release.</summary>
 public enum UpdateMode

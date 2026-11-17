@@ -44,8 +44,13 @@ public sealed class OllamaServerController : IDisposable
     /// <summary>Time granted to a killed server to release its port before the next start.</summary>
     private static readonly TimeSpan ExitTimeout = TimeSpan.FromSeconds(10);
 
+    /// <summary>Gives the executable and the environment of the server together with the settings of its log.</summary>
     private readonly ServerControlOptions controlOptions;
+
+    /// <summary>Gives the address that the started server listens on.</summary>
     private readonly OllamaOptions ollamaOptions;
+
+    /// <summary>Receives the outcomes and the failures of the lifecycle actions.</summary>
     private readonly ILogger<OllamaServerController> logger;
 
     /// <summary>Bounded buffer of the owned process output, fed by its output events.</summary>
