@@ -10,7 +10,7 @@ public sealed class OllamaOptions
     public string BaseUrl { get; set; } = "http://localhost:11434";
 
     /// <summary>How long a warmed-up model stays resident on the server, in Ollama keep_alive syntax (e.g. "30m", "-1").</summary>
-    public string WarmUpKeepAlive { get; set; } = "30m";
+    public string WarmUpKeepAlive { get; set; } = "60m";
 
     /// <summary>Interval between two status probes of the server, in seconds.</summary>
     public int StatusPollSeconds { get; set; } = 3;
@@ -33,8 +33,8 @@ public sealed class ServerControlOptions
     /// <summary>Extra environment variables for the server started by Ollamazing (OLLAMA_MODELS, OLLAMA_KEEP_ALIVE...).</summary>
     public Dictionary<string, string> Environment { get; set; } = [];
 
-    /// <summary>Starts the server when Ollamazing boots and finds no Ollama running.</summary>
-    public bool StartOnLaunch { get; set; }
+    /// <summary>Starts the server when Ollamazing boots and finds no Ollama running or answering on this machine.</summary>
+    public bool StartOnLaunch { get; set; } = true;
 
     /// <summary>Stops the server started by Ollamazing when Ollamazing shuts down; servers started elsewhere are never touched.</summary>
     public bool StopOnExit { get; set; } = true;

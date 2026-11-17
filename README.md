@@ -45,7 +45,7 @@ Everything lives in `Ollamazing.Web/appsettings.json`, with defaults that suit a
 |---|---|
 | `Ollama:BaseUrl` | Where Ollama listens (`http://localhost:11434` by default) |
 | `Ollama:WarmUpKeepAlive` | How long a warmed-up model stays in memory |
-| `ServerControl:StartOnLaunch` | Starts Ollama together with Ollamazing |
+| `ServerControl:StartOnLaunch` | Starts Ollama together with Ollamazing when none is running (on by default) |
 | `ServerControl:Environment` | Extra variables for the Ollama server that Ollamazing starts, such as `OLLAMA_MODELS` |
 | `Catalog:DatabasePath` | Where the catalog is kept (your user data folder by default) |
 
@@ -55,12 +55,12 @@ Everything lives in `Ollamazing.Web/appsettings.json`, with defaults that suit a
 | Section | Key | Meaning |
 |---|---|---|
 | `Ollama` | `BaseUrl` | Address of the Ollama API |
-| | `WarmUpKeepAlive` | How long a warmed-up model stays loaded (`30m`; `-1` keeps it forever) |
+| | `WarmUpKeepAlive` | How long a warmed-up model stays loaded (`60m`; `-1` keeps it forever) |
 | | `StatusPollSeconds` | How often the server status is checked |
 | | `DeviceName` | Name under which ollama.com lists this server once linked (`Ollamazing` by default; empty keeps the host name) |
 | `ServerControl` | `ExecutablePath` | `ollama` executable used to start the server (looked up in PATH) |
 | | `Environment` | Extra variables for the server that Ollamazing starts |
-| | `StartOnLaunch` | Starts the server when Ollamazing boots and none is running |
+| | `StartOnLaunch` | Starts the server when Ollamazing boots, unless `BaseUrl` points to another machine or a server already runs or answers there |
 | | `StopOnExit` | Stops the server that Ollamazing started when Ollamazing exits |
 | | `LogFile` | Log of a server started elsewhere; empty uses the default of the Ollama desktop app |
 | `Catalog` | `DatabasePath` | Catalog database; empty uses the user data folder (`~/.local/share/Ollamazing` on Linux, `%LOCALAPPDATA%\Ollamazing` on Windows, `~/Library/Application Support/Ollamazing` on macOS) |

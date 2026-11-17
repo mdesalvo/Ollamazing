@@ -17,7 +17,13 @@
         *@
         <FluentLayoutItem Area="LayoutArea.Header">
             <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="16px">
-                <FluentImage Source="Images/ollamazing_header.png" AlternateText="Ollamazing" Height="36px" Style="display: flex" />
+                @* The llama and the wordmark are vector and live text, so they stay sharp at any zoom and take their tones from the bar itself. *@
+                <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="6px" Width="auto">
+                    @* The llama of the banner follows the white of "ollam"; the wordmark already names it. *@
+                    <LlamaMark Height="36" Style="@WordmarkStyle" />
+                    @* Regular weight matches the thin line of the llama next to it. *@
+                    <FluentText Size="TextSize.Size600" Nowrap="true" Style="@WordmarkStyle">ollam<FluentText Size="TextSize.Size600" Style="@WordmarkAccentStyle">azing</FluentText></FluentText>
+                </FluentStack>
                 <FluentSpacer />
 
                 <FluentStack Orientation="Orientation.Horizontal" VerticalAlignment="VerticalAlignment.Center" HorizontalGap="4px" Width="auto">
@@ -73,6 +79,12 @@
 
     /// <summary>Text colour of the entry of the page on screen: plain white, the brightest tone the bar can carry.</summary>
     private const string OpenSectionText = "var(--colorNeutralForegroundOnBrand)";
+
+    /// <summary>First half of the wordmark in the white of the open entry, as "ollam" is printed in the logo.</summary>
+    private const string WordmarkStyle = $"color: {OpenSectionText}";
+
+    /// <summary>Second half of the wordmark in the sky blue of the entries, as "azing" is printed in the logo.</summary>
+    private const string WordmarkAccentStyle = $"color: {OnBrandText}";
 
     /// <summary>Background of the header counters: the same white as the open entry.</summary>
     private const string CounterBackground = "var(--colorNeutralForegroundOnBrand)";

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using OllamaSharp;
 using Ollamazing.Server.Configuration;
 using Ollamazing.Server.Status;
 
@@ -363,22 +364,60 @@ public sealed class OllamaServerController : IDisposable
     }
 }
 
-/// <summary>Starts the Ollama server when Ollamazing boots, if configured and no server is running yet.</summary>
-public sealed class ServerAutoStartService(OllamaServerController serverController, IOptions<ServerControlOptions> options, ILogger<ServerAutoStartService> logger) : IHostedService
+/// <summary>Starts the Ollama server when Ollamazing boots, only if it belongs on this machine and nothing answers there yet.</summary>
+public sealed class ServerAutoStartService(OllamaServerController serverController, IOllamaApiClient ollamaClient, IOptions<ServerControlOptions> options, IOptions<OllamaOptions> ollamaOptions, ILogger<ServerAutoStartService> logger) : IHostedService
 {
-    /// <summary>Starts the server at boot when configured and no server is running yet.</summary>
-    public Task StartAsync(CancellationToken cancellationToken)
+    /// <summary>An answer slower than this counts as no answer, so a hung endpoint does not stall the boot.</summary>
+    private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(3);
+
+    /// <summary>Starts the server at boot when configured and nothing already serves the configured address.</summary>
+    public async Task StartAsync(CancellationToken cancellationToken)
     {
-        // Auto-start is opt-in and never competes with a server already running.
-        if (!options.Value.StartOnLaunch || serverController.GetProcessState().IsRunning)
-            return Task.CompletedTask;
+        // Auto-start is opt-in.
+        if (!options.Value.StartOnLaunch)
+            return;
+
+        // A server configured elsewhere cannot be started from here.
+        if (!new Uri(ollamaOptions.Value.BaseUrl).IsLoopback)
+        {
+            logger.LogInformation("Auto-start skipped: the Ollama server at {BaseUrl} is not on this machine", ollamaOptions.Value.BaseUrl);
+            return;
+        }
+
+        // A server process already running must not be started a second time.
+        if (serverController.GetProcessState().IsRunning)
+            return;
+
+        // A server that is not a local process (e.g. in a container) can still answer at the configured address.
+        if (await IsApiAnsweringAsync(cancellationToken))
+        {
+            logger.LogInformation("Auto-start skipped: an Ollama server already answers at {BaseUrl}", ollamaOptions.Value.BaseUrl);
+            return;
+        }
 
         // The outcome is only logged, since nobody waits for an answer while the application boots.
         ServerActionResult result = serverController.Execute(ServerAction.Start);
         logger.LogInformation("Auto-start of Ollama: {Message}", result.Message);
-        return Task.CompletedTask;
     }
 
     /// <summary>Leaves the server alone, since the controller stops its own server when it is disposed.</summary>
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>Tells whether an Ollama API answers at the configured address within the probe budget.</summary>
+    private async Task<bool> IsApiAnsweringAsync(CancellationToken cancellationToken)
+    {
+        // The probe budget turns a hung endpoint into no answer instead of stalling the boot.
+        using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeout.CancelAfter(ProbeTimeout);
+        try
+        {
+            // The answer of the API decides whether a server is already serving this address.
+            return await ollamaClient.IsRunningAsync(timeout.Token);
+        }
+        catch (Exception probeError) when (probeError is HttpRequestException || (probeError is OperationCanceledException && !cancellationToken.IsCancellationRequested))
+        {
+            // A refused connection or an expired budget means nothing serves the address.
+            return false;
+        }
+    }
 }
