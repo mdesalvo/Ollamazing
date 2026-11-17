@@ -14,12 +14,12 @@ Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dash
 
 <table>
 <tr>
-<td width="50%" align="center"><img src="docs/screenshots/catalog-tags.png" alt="Tags of a model with their memory fit"/><br/><sub>Every tag tells whether it fits</sub></td>
-<td width="50%" align="center"><img src="docs/screenshots/downloads.png" alt="A download in progress"/><br/><sub>Downloads you can pause and resume</sub></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/catalog-tags.png" alt="Tags of a model with their memory fit" width="100%"/><br/><b>Every tag tells whether it fits</b></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/downloads.png" alt="A download in progress" width="100%"/><br/><b>Downloads you can pause and resume</b></td>
 </tr>
 <tr>
-<td align="center"><img src="docs/screenshots/server.png" alt="The Ollama server page"/><br/><sub>Server, hardware and updates at a glance</sub></td>
-<td align="center"><img src="docs/screenshots/account.png" alt="The ollama.com account page with a sample profile"/><br/><sub>Cloud credits and usage model by model</sub></td>
+<td align="center" valign="top"><img src="docs/screenshots/server.png" alt="The Ollama server page" width="100%"/><br/><b>Server, hardware and updates at a glance</b></td>
+<td align="center" valign="top"><img src="docs/screenshots/account.png" alt="The ollama.com account page with a sample profile" width="100%"/><br/><b>Cloud credits and usage model by model</b></td>
 </tr>
 </table>
 
