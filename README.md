@@ -1,10 +1,10 @@
 <p align="center"><img src="Ollamazing.Web/wwwroot/Images/ollamazing.jpg" alt="Ollamazing: ollama handling made amazing" /></p>
 
 <p align="center">
-  <a href="https://github.com/mdesalvo/Ollamazing/releases/latest"><img src="https://img.shields.io/github/v/release/mdesalvo/Ollamazing?color=lightblue" alt="Latest release"/></a>
   <img src="https://img.shields.io/badge/.NET-10-FFFFFF?color=lightblue" alt=".NET 10"/>
   <img src="https://img.shields.io/badge/OllamaSharp-FFFFFF?logo=nuget&color=lightblue" alt="OllamaSharp"/>
-  <img src="https://img.shields.io/badge/Ollama-FFFFFF?logo=ollama&color=lightblue" alt="Ollama"/>
+  <img src="https://img.shields.io/badge/Ollama-FFFFFF?logo=ollama&color=lightblue" alt="Ollama"/>&nbsp;&nbsp;&nbsp;&nbsp;
+  <a href="https://github.com/mdesalvo/Ollamazing/releases/latest"><img src="https://img.shields.io/github/v/release/mdesalvo/Ollamazing?color=lightblue" alt="Latest release"/></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/mdesalvo/Ollamazing?color=lightblue" alt="Apache 2.0 license"/></a>
 </p>
 
