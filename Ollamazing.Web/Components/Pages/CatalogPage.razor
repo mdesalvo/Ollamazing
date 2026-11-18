@@ -506,8 +506,8 @@
             <= ComfortableMemoryShare => new MemoryFit(BadgeColor.Success, "fits", hint),
             // It loads, but a long context or other applications may push it out of memory.
             <= 1 => new MemoryFit(BadgeColor.Warning, "tight", hint),
-            // It runs with part of the layers on the CPU, much slower than on the GPU.
-            _ when onGpu => new MemoryFit(BadgeColor.Warning, "CPU offload", hint),
+            // Part of the layers spill onto the CPU, much slower than on the GPU: a real problem, not just a margin warning like "tight".
+            _ when onGpu => new MemoryFit(BadgeColor.Danger, "CPU offload", hint),
             // The weights alone exceed the memory the model would run in.
             _ => new MemoryFit(BadgeColor.Danger, "too large", hint)
         };
