@@ -249,7 +249,16 @@ public sealed class PullManager(IOllamaApiClient ollamaClient, ServerStatusMonit
                 }
             }
 
-            // A stream ending without errors means the manifest was written and the model is usable.
+            // OllamaSharp ends the stream silently on cancellation, so only Ollama's final "success" message proves the model is installed.
+            if (!string.Equals(job.LastProgress?.Status, "success", StringComparison.OrdinalIgnoreCase))
+            {
+                // A stop requested by the user is routed to the cancellation handler below, which maps it to Paused or Cancelled.
+                job.Cancellation.Token.ThrowIfCancellationRequested();
+                // Neither success nor a user stop: the connection dropped and the failure handler below reports it.
+                throw new InvalidOperationException("The pull stream ended before the model was complete.");
+            }
+
+            // The manifest was written and the model is usable.
             job.State = PullState.Completed;
             logger.LogInformation("Pulled {ModelReference}", job.ModelReference);
         }
