@@ -12,63 +12,16 @@ Ollamazing puts your whole [Ollama](https://ollama.com) installation in one dash
 
 <table>
 <tr>
-<td width="50%" align="center" valign="top"><img src="docs/screenshots/catalog.jpg" alt="The model catalog with its filters" width="100%"/><br/><b>A faceted catalog of every ollama.com model</b></td>
-<td width="50%" align="center" valign="top"><img src="docs/screenshots/catalog-tags.jpg" alt="Tags of a model with their memory fit" width="100%"/><br/><b>Every tag tells whether it fits</b></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/catalog.jpg" alt="The model catalog with its filters" width="100%"/><br/><b>A faceted catalog of every ollama.com model</b><br/>Narrow the list by class, capabilities, parameters, memory and price per million tokens.</td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/catalog-tags.jpg" alt="Tags of a model with their memory fit" width="100%"/><br/><b>Every tag tells whether it fits</b><br/>On the GPU or in the RAM that Ollama runs on. "Use this model" hands you ready-to-copy snippets for the terminal, curl, Python and any OpenAI-compatible client.</td>
 </tr>
 <tr>
-<td width="50%" align="center" valign="top"><img src="docs/screenshots/models.jpg" alt="Installed models with one loaded in memory" width="100%"/><br/><b>Your models, on disk and in memory</b></td>
-<td width="50%" align="center" valign="top"><img src="docs/screenshots/downloads.jpg" alt="A download in progress" width="100%"/><br/><b>Downloads you can pause and resume</b></td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/models.jpg" alt="Installed models with one loaded in memory" width="100%"/><br/><b>Your models, on disk and in memory</b><br/>See what is installed and what sits in memory; warm a model up before you need it, update it or remove it.</td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/downloads.jpg" alt="A download in progress" width="100%"/><br/><b>Downloads you can pause and resume</b><br/>Pull any model with live progress, pause it and resume it later. Downloads keep going while you move around the app.</td>
 </tr>
 <tr>
-<td width="50%" align="center" valign="top"><img src="docs/screenshots/server.jpg" alt="The Ollama server page" width="100%"/><br/><b>Server, hardware and updates at a glance</b></td>
-<td width="50%" align="center" valign="top"><img src="docs/screenshots/account.jpg" alt="The ollama.com account page with a sample profile" width="100%"/><br/><b>Cloud credits and usage model by model</b></td>
-</tr>
-</table>
-
-## What you can do
-
-<table>
-<tr>
-<td width="50%" valign="top">
-
-🔍 **Find the right model**<br/>
-Browse every model on ollama.com and narrow the list by class, capabilities, parameters, memory and price per million tokens. Each tag tells you whether it fits the GPU or the RAM that Ollama runs on.
-
-</td>
-<td width="50%" valign="top">
-
-⬇️ **Get it in one click**<br/>
-Pull any model with live progress, pause it and resume it later. Downloads keep going while you move around the app.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-🧑‍💻 **Put it to work**<br/>
-"Use this model" hands you ready-to-copy snippets for the terminal, curl, Python and any OpenAI-compatible client.
-
-</td>
-<td valign="top">
-
-📦 **Keep your models tidy**<br/>
-See what is installed and what sits in memory; warm a model up before you need it, update it or remove it.
-
-</td>
-</tr>
-<tr>
-<td valign="top">
-
-⚙️ **Stay in control of Ollama**<br/>
-Start and stop the server, see its version and hardware at a glance and update Ollama itself in place when a new release is out.
-
-</td>
-<td valign="top">
-
-☁️ **Bring in the cloud**<br/>
-Link Ollama to your ollama.com account to run cloud models, then follow credits, plan and usage model by model.
-
-</td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/server.jpg" alt="The Ollama server page" width="100%"/><br/><b>Server, hardware and updates at a glance</b><br/>Start and stop the server, see its version and hardware and update Ollama itself in place when a new release is out.</td>
+<td width="50%" align="center" valign="top"><img src="docs/screenshots/account.jpg" alt="The ollama.com account page with a sample profile" width="100%"/><br/><b>Cloud credits and usage model by model</b><br/>Link Ollama to your ollama.com account to run cloud models, then keep an eye on your plan.</td>
 </tr>
 </table>
 
