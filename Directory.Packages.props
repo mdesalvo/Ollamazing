@@ -1,10 +1,8 @@
 <Project>
-
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
     <CentralPackageFloatingVersionsEnabled>true</CentralPackageFloatingVersionsEnabled>
   </PropertyGroup>
-
   <!-- Ollamazing.Server -->
   <ItemGroup>
     <PackageVersion Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.15" />
@@ -12,12 +10,10 @@
     <PackageVersion Include="OllamaSharp" Version="5.5.2" />
     <PackageVersion Include="ZstdSharp.Port" Version="0.8.8" />
   </ItemGroup>
-
   <!-- Ollamazing.Web -->
   <ItemGroup>
-    <PackageVersion Include="AngleSharp" Version="1.10.4" />
+    <PackageVersion Include="AngleSharp" Version="1.10.5" />
     <PackageVersion Include="Microsoft.Data.Sqlite" Version="10.0.15" />
     <PackageVersion Include="Microsoft.FluentUI.AspNetCore.Components" Version="5.1.0" />
   </ItemGroup>
-
 </Project>
