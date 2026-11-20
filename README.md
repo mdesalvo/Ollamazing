@@ -47,7 +47,8 @@ All settings live in `Ollamazing.Web/appsettings.json`. The defaults suit an Oll
 dotnet run --project Ollamazing.Web -- --Ollama:BaseUrl=http://192.168.1.10:11434
 ```
 
-### `Ollama` · the server Ollamazing talks to
+<details>
+<summary><b><code>Ollama</code> · the server Ollamazing talks to</b></summary>
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -56,7 +57,10 @@ dotnet run --project Ollamazing.Web -- --Ollama:BaseUrl=http://192.168.1.10:1143
 | `StatusPollSeconds` | `3` | How often the dashboard checks the server. |
 | `DeviceName` | `Ollamazing` | Name ollama.com shows for this server once the account is linked; empty uses the computer name. |
 
-### `ServerControl` · running Ollama from Ollamazing
+</details>
+
+<details>
+<summary><b><code>ServerControl</code> · running Ollama from Ollamazing</b></summary>
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -68,7 +72,10 @@ dotnet run --project Ollamazing.Web -- --Ollama:BaseUrl=http://192.168.1.10:1143
 | `LogLines` | `200` | Lines shown by the log viewer. |
 | `UpdateCheckHours` | `24` | How often GitHub is checked for a new Ollama release; `0` turns the check off. |
 
-### `Catalog` · the ollama.com model catalog
+</details>
+
+<details>
+<summary><b><code>Catalog</code> · the ollama.com model catalog</b></summary>
 
 | Setting | Default | What it does |
 |---|---|---|
@@ -77,3 +84,5 @@ dotnet run --project Ollamazing.Web -- --Ollama:BaseUrl=http://192.168.1.10:1143
 | `MaxConcurrentRequests` | `4` | Pages read in parallel while model sizes load, kept low to be gentle with ollama.com. |
 | `BaseUrl` | `https://ollama.com` | Site the catalog is read from. |
 | `MaxPages` | `60` | Safety limit on the catalog pages read in one refresh. |
+
+</details>
