@@ -61,7 +61,7 @@
                           Disabled="@(runningAction is not null || IsUpdating || status.Process.IsRunning || status.IsReachable)" OnClick="StartAsync">Start</FluentButton>
             <FluentButton Loading="@(runningAction == ServerAction.Restart)"
                           Disabled="@(runningAction is not null || IsUpdating || !status.Process.IsOwned || !status.IsReachable)" OnClick="RestartAsync">Restart</FluentButton>
-            <FluentButton Appearance="ButtonAppearance.Outline" Loading="@(runningAction == ServerAction.Stop)"
+            <FluentButton Appearance="ButtonAppearance.Outline" Color="var(--colorPaletteRedForeground1)" Loading="@(runningAction == ServerAction.Stop)"
                           Disabled="@(runningAction is not null || IsUpdating || !status.Process.IsOwned)" OnClick="StopAsync">Stop</FluentButton>
         }
     </FluentStack>

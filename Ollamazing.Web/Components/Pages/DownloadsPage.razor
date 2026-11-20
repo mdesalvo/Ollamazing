@@ -60,12 +60,12 @@ else
                     @if (job.IsActive)
                     {
                         <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => PullManager.Pause(job.Id)">Pause</FluentButton>
-                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Color="var(--colorPaletteRedForeground1)" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
                     }
                     else if (job.IsPaused)
                     {
                         <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Disabled="@(!StatusMonitor.Current.IsReachable)" OnClick="() => PullManager.Resume(job.Id)">Resume</FluentButton>
-                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Color="var(--colorPaletteRedForeground1)" OnClick="() => PullManager.Cancel(job.Id)">Cancel</FluentButton>
                     }
                     else if (job.State is PullState.Failed or PullState.Cancelled)
                     {

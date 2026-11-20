@@ -104,12 +104,12 @@ else
                                 @if (pendingDeletion == model.Name)
                                 {
                                     @* Pressing Delete swaps it for this pair, which would leave the keyboard focus nowhere; Cancel takes it, so a second Enter keeps the model. *@
-                                    <FluentButton Appearance="ButtonAppearance.Primary" OnClick="() => DeleteAsync(model.Name)">Confirm delete</FluentButton>
+                                    <FluentButton Appearance="ButtonAppearance.Outline" Color="var(--colorPaletteRedForeground1)" OnClick="() => DeleteAsync(model.Name)">Confirm delete</FluentButton>
                                     <FluentButton Appearance="ButtonAppearance.Subtle" Autofocus="true" OnClick="CancelDeletion">Cancel</FluentButton>
                                 }
                                 else
                                 {
-                                    <FluentButton Appearance="ButtonAppearance.Outline" OnClick="() => pendingDeletion = model.Name">Delete</FluentButton>
+                                    <FluentButton Appearance="ButtonAppearance.Outline" Color="var(--colorPaletteRedForeground1)" OnClick="() => pendingDeletion = model.Name">Delete</FluentButton>
                                 }
                             </FluentStack>
                         }

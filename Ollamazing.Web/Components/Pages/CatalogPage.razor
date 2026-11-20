@@ -42,7 +42,7 @@
             <Actions>
                 @if (HasActiveFilters)
                 {
-                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ClearAllFilters">Clear all</FluentButton>
+                    <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Color="var(--colorPaletteRedForeground1)" OnClick="ClearAllFilters">Clear all</FluentButton>
                 }
             </Actions>
             <ChildContent>
@@ -58,7 +58,7 @@
                     @if (HasActiveFilters)
                     {
                         <FluentStack Orientation="Orientation.Horizontal">
-                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="ClearAllFilters">Clear all</FluentButton>
+                            <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Color="var(--colorPaletteRedForeground1)" OnClick="ClearAllFilters">Clear all</FluentButton>
                         </FluentStack>
                     }
                     @FilterControls
@@ -343,7 +343,7 @@
                     <FluentSpacer />
                     @if (query.HasSelectionsIn(facet.Key))
                     {
-                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" OnClick="() => ClearFacet(facet)">Clear</FluentButton>
+                        <FluentButton Size="ButtonSize.Small" Appearance="ButtonAppearance.Outline" Color="var(--colorPaletteRedForeground1)" OnClick="() => ClearFacet(facet)">Clear</FluentButton>
                     }
                 </FluentStack>
                 @* Alternatives wear a round mark and take a single choice; a second click returns the facet to all. *@
